@@ -103,4 +103,4 @@ Frontend → Backend → OCR Service.
 ### Clone
 ```bash
 git clone <repo-url>
-cd upsproj
+cd proj
