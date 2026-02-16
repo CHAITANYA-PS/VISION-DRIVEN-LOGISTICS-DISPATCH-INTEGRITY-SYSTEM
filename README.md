@@ -1,4 +1,4 @@
-# UPS Warehouse Management System (WMS)
+# Warehouse Management System (WMS)
 
 Enterprise-grade, AI-powered warehouse management system for inbound, outbound, inventory, and task operations.
 
@@ -6,7 +6,7 @@ Enterprise-grade, AI-powered warehouse management system for inbound, outbound, 
 
 ## Overview
 
-UPS WMS automates warehouse workflows using role-based access, real-time tracking, and OCR-based verification.  
+WMS automates warehouse workflows using role-based access, real-time tracking, and OCR-based verification.  
 Designed for scalability, auditability, and operational efficiency.
 
 ---
