@@ -1,0 +1,795 @@
+================================================================================
+                    USER MANAGEMENT SYSTEM
+                    END-TO-END DOCUMENTATION
+================================================================================
+
+Table of Contents:
+1. System Overview
+2. Architecture
+3. Authentication & Authorization Flow
+4. Frontend-Backend Interaction
+5. API Endpoints
+6. Data Flow Diagrams
+7. Security Mechanisms
+8. Error Handling
+9. Technical Stack
+
+================================================================================
+1. SYSTEM OVERVIEW
+================================================================================
+
+PURPOSE:
+--------
+The User Management system allows ADMIN users to manage warehouse staff 
+(Supervisors and Workers) through a web interface.
+
+KEY FEATURES:
+-------------
+- View all users in a table
+- Create new users (Supervisor/Worker only)
+- Edit existing users
+- Delete users
+- Search and filter users
+- Role-based access control (ADMIN only)
+
+USER ROLES:
+-----------
+- ADMIN: Full access to user management
+- SUPERVISOR: Can view users, cannot manage
+- WORKER: No access to user management
+
+================================================================================
+2. ARCHITECTURE
+================================================================================
+
+HIGH-LEVEL ARCHITECTURE:
+------------------------
+
+┌─────────────────────────────────────────────────────────────┐
+│                        FRONTEND (React)                      │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  UserManagement.jsx (UI Component)                 │   │
+│  │  - State Management (useState)                     │   │
+│  │  - Form Validation                                  │   │
+│  │  - User Interface                                   │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  userService.js (API Service Layer)                │   │
+│  │  - getAllUsers()                                    │   │
+│  │  - createUser()                                    │   │
+│  │  - updateUser()                                    │   │
+│  │  - deleteUser()                                    │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  api.js (Axios Instance)                           │   │
+│  │  - Request Interceptor (Adds JWT Token)             │   │
+│  │  - Response Interceptor (Handles 401 errors)        │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          │ HTTP Request with JWT Token
+                          │ Authorization: Bearer <token>
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    BACKEND (Spring Boot)                    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  SecurityConfig.java                               │   │
+│  │  - CORS Configuration                              │   │
+│  │  - Security Filter Chain                           │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  JwtFilter.java (JWT Authentication Filter)        │   │
+│  │  - Extracts JWT from Authorization header          │   │
+│  │  - Validates token                                  │   │
+│  │  - Sets SecurityContext                            │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  UserController.java (REST Controller)              │   │
+│  │  - @PreAuthorize("hasRole('ADMIN')")                │   │
+│  │  - Handles HTTP requests                            │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  UserServiceImpl.java (Business Logic)              │   │
+│  │  - Password encoding                                 │   │
+│  │  - Role normalization                                │   │
+│  │  - Data validation                                  │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  UserRepository.java (Data Access Layer)            │   │
+│  │  - JPA Repository                                    │   │
+│  │  - Database operations                               │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  MySQL Database (visera_db)                          │   │
+│  │  - users table                                       │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+
+================================================================================
+3. AUTHENTICATION & AUTHORIZATION FLOW
+================================================================================
+
+STEP-BY-STEP AUTHENTICATION PROCESS:
+-------------------------------------
+
+┌─────────────┐
+│   USER      │
+│  (Browser)  │
+└──────┬──────┘
+       │
+       │ 1. User enters credentials
+       │    Email: admin@visera.com
+       │    Password: admin123
+       ▼
+┌─────────────────────────────────────┐
+│  Login.jsx                          │
+│  - Collects email & password       │
+│  - Calls authService.login()       │
+└──────────────┬──────────────────────┘
+               │
+               │ 2. POST /api/auth/login
+               │    { email, password }
+               ▼
+┌─────────────────────────────────────┐
+│  AuthController.java                │
+│  - Validates credentials            │
+│  - Generates JWT token             │
+│  - Returns: { token, role, userId } │
+└──────────────┬──────────────────────┘
+               │
+               │ 3. Response with JWT
+               ▼
+┌─────────────────────────────────────┐
+│  authService.js                     │
+│  - Stores token in localStorage      │
+│  - Stores role in localStorage      │
+│  - Redirects to dashboard           │
+└─────────────────────────────────────┘
+
+JWT TOKEN STRUCTURE:
+---------------------
+{
+  "sub": "admin@visera.com",
+  "role": "ADMIN",
+  "iat": 1234567890,
+  "exp": 1234571490
+}
+
+AUTHORIZATION CHECK FLOW:
+-------------------------
+Every API Request Flow:
+
+1. Frontend makes request
+   └─> api.js intercepts
+       └─> Adds: Authorization: Bearer <token>
+
+2. Request reaches Backend
+   └─> SecurityConfig checks if endpoint needs auth
+       └─> JwtFilter extracts token from header
+           └─> Validates token signature & expiration
+               └─> Extracts email from token
+                   └─> Loads user from database
+                       └─> Creates UserDetails with authorities
+                           └─> Sets SecurityContext
+
+3. Request reaches Controller
+   └─> @PreAuthorize("hasRole('ADMIN')") checks
+       └─> Spring Security evaluates:
+           - Does SecurityContext have ROLE_ADMIN?
+           - YES → Allow request
+           - NO → Return 403 Forbidden
+
+================================================================================
+4. FRONTEND-BACKEND INTERACTION
+================================================================================
+
+REQUEST FLOW (DETAILED):
+-------------------------
+
+1. USER INTERACTION (UserManagement.jsx)
+   │
+   ├─ User clicks "Add User" button
+   │  └─> handleOpenModal() called
+   │      └─> Sets isModalOpen = true
+   │          └─> Modal component renders
+   │
+   ├─ User fills form and clicks "Add User"
+   │  └─> handleCreateUser(e) called
+   │      └─> e.preventDefault() (prevents page reload)
+   │          └─> validateForm() called
+   │              ├─ Validates name (required)
+   │              ├─ Validates email (format check)
+   │              ├─ Validates password (min 6 chars)
+   │              └─ Validates role (SUPERVISOR or WORKER)
+   │
+   └─ If validation passes:
+      └─> createUser(payload) called
+          └─> Payload: { name, email, password, role }
+
+2. SERVICE LAYER (userService.js)
+   │
+   └─> createUser(userData)
+       └─> api.post('/api/users/create', userData)
+           └─> Returns Promise
+
+3. API LAYER (api.js)
+   │
+   └─> Request Interceptor runs BEFORE request
+       ├─ Gets token from localStorage
+       ├─ Adds Authorization header: "Bearer <token>"
+       └─ Adds Content-Type: "application/json"
+       │
+       └─> Axios sends HTTP POST request:
+           POST http://localhost:8081/api/users/create
+           Headers:
+             - Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+             - Content-Type: application/json
+           Body:
+             {
+               "name": "John Smith",
+               "email": "john@example.com",
+               "password": "password123",
+               "role": "SUPERVISOR"
+             }
+
+4. SECURITY FILTER (SecurityConfig.java)
+   │
+   └─> Checks if /api/users/create requires authentication
+       └─> YES (all endpoints except /api/auth/** require auth)
+           └─> JwtFilter.doFilterInternal() called
+
+5. JWT FILTER (JwtFilter.java)
+   │
+   └─> Extracts Authorization header
+       ├─ Checks if header starts with "Bearer "
+       ├─ Extracts token (removes "Bearer " prefix)
+       ├─ Validates token using JwtUtil.isTokenValid()
+       │  ├─ Checks signature
+       │  ├─ Checks expiration
+       │  └─ Returns true if valid
+       │
+       └─> If token valid:
+           ├─ Extracts email from token
+           ├─ Loads UserDetails from database
+           ├─ Creates Authentication object with authorities
+           └─> Sets SecurityContext with authentication
+
+6. CONTROLLER (UserController.java)
+   │
+   └─> @PreAuthorize("hasRole('ADMIN')") evaluated
+       ├─ Spring Security checks SecurityContext
+       ├─ Looks for authority: "ROLE_ADMIN"
+       │
+       ├─ If user has ROLE_ADMIN:
+       │  └─> createUser() method executes
+       │      └─> Calls userService.createUser(user)
+       │
+       └─> If user doesn't have ROLE_ADMIN:
+           └─> Returns 403 Forbidden
+               └─> Frontend receives error
+
+7. SERVICE LAYER (UserServiceImpl.java)
+   │
+   └─> createUser(User user)
+       ├─ Normalizes role to uppercase
+       ├─ Encodes password using BCryptPasswordEncoder
+       └─> Saves to database via UserRepository
+
+8. DATABASE (MySQL)
+   │
+   └─> INSERT INTO users (name, email, password, role, createdAt)
+       VALUES ('John Smith', 'john@example.com', '$2a$10$...', 'SUPERVISOR', NOW())
+
+9. RESPONSE FLOW
+   │
+   └─> Database returns saved User entity
+       └─> Service returns User object
+           └─> Controller wraps in ResponseEntity<User>
+               └─> Spring converts to JSON
+                   └─> HTTP 200 OK response sent
+                       {
+                         "id": 1,
+                         "name": "John Smith",
+                         "email": "john@example.com",
+                         "role": "SUPERVISOR",
+                         "createdAt": "2024-01-15T10:30:00"
+                       }
+
+10. FRONTEND RECEIVES RESPONSE
+    │
+    └─> Response Interceptor (api.js)
+        ├─ Checks status code
+        ├─ If 200: Returns response.data
+        └─> If 401: Clears localStorage, redirects to login
+            └─> If 403: Returns error to caller
+                │
+                └─> userService.createUser() resolves
+                    └─> handleCreateUser() continues
+                        ├─ Shows success message
+                        ├─ Closes modal
+                        ├─ Resets form
+                        └─> Calls fetchUsers() to refresh list
+
+================================================================================
+5. API ENDPOINTS
+================================================================================
+
+ENDPOINT DETAILS:
+-----------------
+
+| Method | Endpoint | Authorization | Description | Request Body | Response |
+|--------|----------|--------------|-------------|--------------|----------|
+| GET | `/api/users/getallusersDTOs` | ADMIN | Get all users | None | `List<UserDTO>` |
+| GET | `/api/users/{id}` | ADMIN, SUPERVISOR | Get user by ID | None | `User` |
+| POST | `/api/users/create` | ADMIN | Create new user | `{name, email, password, role}` | `User` |
+| PUT | `/api/users/{id}` | ADMIN | Update user | `{name, email, password?, role}` | `User` |
+| DELETE | `/api/users/{id}` | ADMIN | Delete user | None | `204 No Content` |
+
+REQUEST/RESPONSE EXAMPLES:
+---------------------------
+
+Create User Request:
+POST /api/users/create HTTP/1.1
+Host: localhost:8081
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Content-Type: application/json
+
+{
+  "name": "John Smith",
+  "email": "john@example.com",
+  "password": "password123",
+  "role": "SUPERVISOR"
+}
+
+Create User Response (Success):
+{
+  "id": 1,
+  "name": "John Smith",
+  "email": "john@example.com",
+  "role": "SUPERVISOR",
+  "createdAt": "2024-01-15T10:30:00"
+}
+
+Create User Response (Error - 403):
+{
+  "error": "Access Denied",
+  "message": "Insufficient privileges"
+}
+
+================================================================================
+6. DATA FLOW DIAGRAMS
+================================================================================
+
+COMPLETE USER CREATION FLOW:
+----------------------------
+
+[USER]                    [FRONTEND]                  [BACKEND]                    [DATABASE]
+  │                           │                           │                            │
+  │ 1. Click "Add User"       │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │ 2. Fill Form              │                           │                            │
+  │    Name: "John"           │                           │                            │
+  │    Email: "john@..."      │                           │                            │
+  │    Password: "pass123"     │                           │                            │
+  │    Role: "SUPERVISOR"      │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │ 3. Click "Add User"       │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 4. validateForm()         │                            │
+  │                           │    ✓ Name valid           │                            │
+  │                           │    ✓ Email valid          │                            │
+  │                           │    ✓ Password valid       │                            │
+  │                           │    ✓ Role valid           │                            │
+  │                           │                           │                            │
+  │                           │ 5. createUser(payload)     │                            │
+  │                           │    {                      │                            │
+  │                           │      name: "John",        │                            │
+  │                           │      email: "john@...",   │                            │
+  │                           │      password: "pass123", │                            │
+  │                           │      role: "SUPERVISOR"   │                            │
+  │                           │    }                     │                            │
+  │                           │                           │                            │
+  │                           │ 6. POST /api/users/create │                            │
+  │                           │    Headers:               │                            │
+  │                           │    Authorization: Bearer   │                            │
+  │                           │    <JWT_TOKEN>            │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 7. JwtFilter validates     │
+  │                           │                           │    token & sets            │
+  │                           │                           │    SecurityContext         │
+  │                           │                           │                            │
+  │                           │                           │ 8. @PreAuthorize checks   │
+  │                           │                           │    hasRole('ADMIN')        │
+  │                           │                           │    ✓ User is ADMIN         │
+  │                           │                           │                            │
+  │                           │                           │ 9. UserController         │
+  │                           │                           │    .createUser()           │
+  │                           │                           │                            │
+  │                           │                           │ 10. UserServiceImpl       │
+  │                           │                           │     .createUser()         │
+  │                           │                           │     - Normalize role       │
+  │                           │                           │     - Encode password      │
+  │                           │                           │                            │
+  │                           │                           │ 11. UserRepository.save() │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 12. INSERT INTO users
+  │                           │                           │                            │     VALUES (...)
+  │                           │                           │                            │
+  │                           │                           │                            │ 13. Return saved User
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 14. Return User object    │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 15. Handle success        │                            │
+  │                           │    - Show success msg     │                            │
+  │                           │    - Close modal          │                            │
+  │                           │    - Reset form           │                            │
+  │                           │    - fetchUsers()          │                            │
+  │                           │                           │                            │
+  │                           │ 16. GET /api/users/        │                            │
+  │                           │     getallusersDTOs       │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 17. Query all users        │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 18. SELECT * FROM users
+  │                           │                           │                            │
+  │                           │                           │                            │ 19. Return List<User>
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 20. Map to UserDTO         │
+  │                           │                           │    Return List<UserDTO>    │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 21. Update UI with        │                            │
+  │                           │     new user list         │                            │
+  │<──────────────────────────│                           │                            │
+  │                           │                           │                            │
+  │ 22. See updated table     │                           │                            │
+  │     with new user         │                           │                            │
+  │                           │                           │                            │
+
+USER UPDATE FLOW:
+-----------------
+
+[USER]                    [FRONTEND]                  [BACKEND]                    [DATABASE]
+  │                           │                           │                            │
+  │ 1. Click Actions (⋮)      │                           │                            │
+  │    → Click "Edit"         │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 2. handleOpenEditModal()  │                            │
+  │                           │    - Loads user data      │                            │
+  │                           │    - Opens edit modal     │                            │
+  │                           │                           │                            │
+  │ 3. Modify fields          │                           │                            │
+  │    Name: "John Updated"   │                           │                            │
+  │    (Password: leave blank)│                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │ 4. Click "Update User"    │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 5. validateForm(true)     │                            │
+  │                           │    ✓ Name valid           │                            │
+  │                           │    ✓ Email valid          │                            │
+  │                           │    ✓ Password optional    │                            │
+  │                           │                           │                            │
+  │                           │ 6. updateUser(id, payload)│                            │
+  │                           │    {                      │                            │
+  │                           │      name: "John Updated",│                            │
+  │                           │      email: "john@...",   │                            │
+  │                           │      role: "SUPERVISOR"    │                            │
+  │                           │      // No password        │                            │
+  │                           │    }                      │                            │
+  │                           │                           │                            │
+  │                           │ 7. PUT /api/users/{id}    │                            │
+  │                           │    Authorization: Bearer   │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 8. JWT validation          │
+  │                           │                           │ 9. Authorization check     │
+  │                           │                           │ 10. UserController         │
+  │                           │                           │     .updateUser()          │
+  │                           │                           │                            │
+  │                           │                           │ 11. UserServiceImpl        │
+  │                           │                           │     .updateUser()          │
+  │                           │                           │     - Updates name         │
+  │                           │                           │     - Updates email        │
+  │                           │                           │     - Skips password       │
+  │                           │                           │       (not provided)       │
+  │                           │                           │                            │
+  │                           │                           │ 12. UserRepository.save()  │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 13. UPDATE users SET
+  │                           │                           │                            │     name=?, email=?
+  │                           │                           │                            │     WHERE id=?
+  │                           │                           │                            │
+  │                           │                           │                            │ 14. Return updated User
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 15. Return User object    │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 16. Refresh user list     │                            │
+  │                           │     fetchUsers()          │                            │
+  │                           │                           │                            │
+
+USER DELETE FLOW:
+-----------------
+
+[USER]                    [FRONTEND]                  [BACKEND]                    [DATABASE]
+  │                           │                           │                            │
+  │ 1. Click Actions (⋮)      │                           │                            │
+  │    → Click "Delete"       │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 2. Confirm dialog         │                            │
+  │                           │    "Are you sure...?"     │                            │
+  │                           │                           │                            │
+  │ 2. Click "OK"             │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 3. deleteUser(userId)     │                            │
+  │                           │                           │                            │
+  │                           │ 4. DELETE /api/users/{id} │                            │
+  │                           │    Authorization: Bearer   │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 5. JWT validation          │
+  │                           │                           │ 6. Authorization check     │
+  │                           │                           │ 7. UserController         │
+  │                           │                           │     .deleteUser()          │
+  │                           │                           │                            │
+  │                           │                           │ 8. UserServiceImpl         │
+  │                           │                           │     .deleteUser()          │
+  │                           │                           │                            │
+  │                           │                           │ 9. UserRepository         │
+  │                           │                           │     .deleteById()          │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 10. DELETE FROM users
+  │                           │                           │                            │     WHERE id=?
+  │                           │                           │                            │
+  │                           │                           │                            │ 11. Return success
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 12. Return 204 No Content │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 13. Show success message   │                            │
+  │                           │ 14. Refresh user list     │                            │
+  │                           │     fetchUsers()           │                            │
+  │                           │                           │                            │
+
+================================================================================
+7. SECURITY MECHANISMS
+================================================================================
+
+1. JWT AUTHENTICATION:
+----------------------
+
+JWT Token Lifecycle:
+
+1. TOKEN GENERATION (Login)
+   └─> AuthService generates JWT with:
+       - Subject (email)
+       - Role claim
+       - Issued at (iat)
+       - Expiration (exp = iat + 1 hour)
+       - Signed with HS256 algorithm
+
+2. TOKEN STORAGE
+   └─> Frontend stores in localStorage
+       - Key: "token"
+       - Value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+3. TOKEN USAGE
+   └─> Every API request includes:
+       Authorization: Bearer <token>
+
+4. TOKEN VALIDATION (Backend)
+   └─> JwtFilter validates:
+       - Signature (using secret key)
+       - Expiration time
+       - Token format
+
+5. TOKEN EXPIRATION
+   └─> After 1 hour:
+       - Token becomes invalid
+       - Frontend receives 401
+       - User redirected to login
+
+2. ROLE-BASED ACCESS CONTROL (RBAC):
+-------------------------------------
+
+Role Hierarchy:
+
+ADMIN
+  ├─> Can create users
+  ├─> Can update users
+  ├─> Can delete users
+  ├─> Can view all users
+  └─> Full system access
+
+SUPERVISOR
+  ├─> Can view users (read-only)
+  ├─> Cannot create/update/delete users
+  └─> Limited system access
+
+WORKER
+  ├─> No access to user management
+  └─> Task execution only
+
+3. PASSWORD SECURITY:
+---------------------
+
+Password Handling:
+
+1. FRONTEND
+   └─> Password sent in plain text (over HTTPS)
+       - Never stored in localStorage
+       - Only in memory during form submission
+
+2. BACKEND
+   └─> Password encoded using BCryptPasswordEncoder
+       - One-way hashing algorithm
+       - Salt included automatically
+       - Example: "password123" → "$2a$10$N9qo8uLOickgx2ZMRZoMye..."
+
+3. DATABASE
+   └─> Only hashed password stored
+       - Never plain text
+       - Cannot be reversed
+
+4. CORS CONFIGURATION:
+---------------------
+
+SecurityConfig.java:
+- Allows all origins (*)
+- Allows all methods (*)
+- Allows all headers (*)
+- Configured for development environment
+
+================================================================================
+8. ERROR HANDLING
+================================================================================
+
+FRONTEND ERROR HANDLING:
+------------------------
+
+api.js - Response Interceptor:
+- Checks response status code
+- If 401 (Unauthorized):
+  - Clears localStorage
+  - Removes token, role, userId
+  - Redirects to login page
+- If other errors:
+  - Returns error to caller
+  - Displays error message in UI
+
+UserManagement.jsx - Error Handling:
+- Try-catch blocks around API calls
+- Extracts error message from response
+- Displays error in Alert component
+- Logs errors to console for debugging
+
+BACKEND ERROR RESPONSE CODES:
+------------------------------
+
+200 OK
+  └─> Request successful
+
+400 Bad Request
+  └─> Invalid request data
+      Example: Missing required fields
+
+401 Unauthorized
+  └─> No token or invalid token
+      Example: Token expired
+
+403 Forbidden
+  └─> Valid token but insufficient permissions
+      Example: SUPERVISOR trying to create user
+
+404 Not Found
+  └─> Resource not found
+      Example: User ID doesn't exist
+
+500 Internal Server Error
+  └─> Server-side error
+      Example: Database connection failed
+
+================================================================================
+9. TECHNICAL STACK
+================================================================================
+
+FRONTEND:
+---------
+- React 19.2.0
+- React Router DOM 7.10.1
+- Axios 1.13.2
+- Tailwind CSS 4.1.17
+- Radix UI (Dropdown Menu, Select)
+- Lucide React (Icons)
+- Vite (Build Tool)
+
+BACKEND:
+--------
+- Spring Boot 3.x
+- Spring Security (JWT Authentication)
+- Spring Data JPA
+- MySQL Database
+- Lombok
+- Jackson (JSON Serialization)
+
+DATABASE SCHEMA:
+----------------
+
+CREATE TABLE users (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+================================================================================
+SUMMARY
+================================================================================
+
+KEY POINTS FOR TEAM MEMBERS:
+----------------------------
+
+1. Authentication: JWT tokens stored in localStorage, added to every request
+2. Authorization: Spring Security @PreAuthorize checks role before allowing access
+3. Security: Passwords hashed with BCrypt, never stored in plain text
+4. Error handling: Frontend interceptors handle 401/403 errors automatically
+5. Data flow: Frontend → API Service → Axios → Backend → Database → Response
+6. Role restrictions: Only ADMIN can manage users; others have read-only or no access
+
+COMMON ISSUES & SOLUTIONS:
+---------------------------
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| 403 Forbidden | User not ADMIN | Log in as ADMIN user |
+| 401 Unauthorized | Token expired | Re-login required |
+| CORS error | Backend CORS misconfigured | Check SecurityConfig.java |
+| Password not updating | Password field left blank | Leave blank to keep current |
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
+
+
+
+
+
+
+
+

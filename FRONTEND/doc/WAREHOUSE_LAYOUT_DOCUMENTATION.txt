@@ -1,0 +1,1629 @@
+================================================================================
+                    WAREHOUSE LAYOUT SYSTEM
+                    END-TO-END DOCUMENTATION
+================================================================================
+
+Table of Contents:
+1. System Overview
+2. Architecture
+3. Warehouse Hierarchy (Zone → Rack → Bin)
+4. Frontend-Backend Interaction
+5. API Endpoints
+6. Data Flow Diagrams
+7. Component Structure
+8. Statistics Calculation Flow
+9. Security Mechanisms
+10. Error Handling
+11. Technical Stack
+
+================================================================================
+1. SYSTEM OVERVIEW
+================================================================================
+
+PURPOSE:
+--------
+The Warehouse Layout system provides a visual dashboard for managing and monitoring
+warehouse zones, racks, and bins. It displays real-time occupancy statistics and
+allows administrators to manage the warehouse structure.
+
+KEY FEATURES:
+-------------
+- View all zones in a card-based dashboard layout
+- Display zone statistics (racks, bins, occupancy percentage)
+- Visual occupancy indicators (progress bars, color-coded badges)
+- Warehouse heat map showing occupancy at a glance
+- Create new zones (Admin only)
+- Edit existing zones (Admin only)
+- Delete zones (Admin only)
+- Real-time statistics calculation
+
+WAREHOUSE HIERARCHY:
+--------------------
+Zone (Top Level)
+  └─> Rack (Middle Level)
+      └─> Bin (Bottom Level)
+          └─> Inventory Stock (Items stored in bins)
+
+Example:
+Zone A1
+  ├─> Rack 1
+  │   ├─> Bin 1 (contains SKU items)
+  │   ├─> Bin 2 (contains SKU items)
+  │   └─> Bin 3 (empty)
+  ├─> Rack 2
+  │   ├─> Bin 4 (contains SKU items)
+  │   └─> Bin 5 (empty)
+  └─> Rack 3
+      └─> Bin 6 (empty)
+
+USER ROLES:
+-----------
+- ADMIN: Full access (create, edit, delete zones)
+- SUPERVISOR: View-only access (can see statistics)
+- WORKER: View-only access (can see statistics)
+
+================================================================================
+2. ARCHITECTURE
+================================================================================
+
+HIGH-LEVEL ARCHITECTURE:
+------------------------
+
+┌─────────────────────────────────────────────────────────────┐
+│                        FRONTEND (React)                      │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Zones.jsx (Dashboard Component)                    │   │
+│  │  - State Management (useState)                     │   │
+│  │  - Zone Cards Rendering                            │   │
+│  │  - Heat Map Visualization                          │   │
+│  │  - Modal Forms (Create/Edit)                       │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  zoneService.js (API Service Layer)                │   │
+│  │  - getZoneStatistics()                              │   │
+│  │  - createZone()                                     │   │
+│  │  - updateZone()                                     │   │
+│  │  - deleteZone()                                     │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  api.js (Axios Instance)                           │   │
+│  │  - Request Interceptor (Adds JWT Token)             │   │
+│  │  - Response Interceptor (Handles 401 errors)        │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          │ HTTP Request with JWT Token
+                          │ Authorization: Bearer <token>
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    BACKEND (Spring Boot)                    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  SecurityConfig.java                               │   │
+│  │  - CORS Configuration                              │   │
+│  │  - Security Filter Chain                           │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  JwtFilter.java (JWT Authentication Filter)        │   │
+│  │  - Validates token                                  │   │
+│  │  - Sets SecurityContext                            │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  ZoneController.java (REST Controller)              │   │
+│  │  - @PreAuthorize("hasRole('ADMIN')")                │   │
+│  │  - Handles HTTP requests                            │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  ZoneServiceImpl.java (Business Logic)              │   │
+│  │  - Statistics Calculation                           │   │
+│  │  - Zone CRUD Operations                             │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  Repositories (Data Access Layer)                   │   │
+│  │  - ZoneRepository                                   │   │
+│  │  - RackRepository                                   │   │
+│  │  - BinRepository                                    │   │
+│  │  - InventoryStockRepository                         │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  MySQL Database (visera_db)                          │   │
+│  │  - zones table                                       │   │
+│  │  - racks table                                       │   │
+│  │  - bins table                                        │   │
+│  │  - inventory_stock table                            │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+
+================================================================================
+3. WAREHOUSE HIERARCHY (Zone → Rack → Bin)
+================================================================================
+
+DATABASE RELATIONSHIPS:
+-----------------------
+
+┌─────────────┐
+│    Zone     │
+│  (zones)    │
+│─────────────│
+│ id (PK)     │
+│ name        │
+│ description │
+└──────┬──────┘
+       │
+       │ 1:N (One Zone has Many Racks)
+       │
+       ▼
+┌─────────────┐
+│    Rack     │
+│  (racks)    │
+│─────────────│
+│ id (PK)     │
+│ zone_id(FK) │───┐
+│ name        │   │ References Zone.id
+└──────┬──────┘   │
+       │           │
+       │ 1:N       │
+       │           │
+       ▼           │
+┌─────────────┐   │
+│     Bin     │   │
+│   (bins)    │   │
+│─────────────│   │
+│ id (PK)     │   │
+│ rack_id(FK) │───┼───┐
+│ code        │   │   │ References Rack.id
+│ capacity    │   │   │
+└──────┬──────┘   │   │
+       │           │   │
+       │ 1:N       │   │
+       │           │   │
+       ▼           │   │
+┌──────────────────┐│   │
+│ Inventory Stock  ││   │
+│(inventory_stock) ││   │
+│──────────────────││   │
+│ id (PK)          ││   │
+│ sku_id (FK)      ││   │
+│ bin_id (FK)      │───┘
+│ quantity         │
+│ updated_at       │
+└──────────────────┘
+
+ENTITY STRUCTURE:
+-----------------
+
+Zone Entity:
+{
+  id: Long,
+  name: String (required),
+  description: String (optional)
+}
+
+Rack Entity:
+{
+  id: Long,
+  zone: Zone (ManyToOne relationship),
+  name: String
+}
+
+Bin Entity:
+{
+  id: Long,
+  rack: Rack (ManyToOne relationship),
+  code: String,
+  capacity: Integer
+}
+
+InventoryStock Entity:
+{
+  id: Long,
+  sku: Sku (ManyToOne),
+  bin: Bin (ManyToOne),
+  quantity: Integer,
+  updatedAt: LocalDateTime
+}
+
+STATISTICS CALCULATION:
+-----------------------
+For each Zone, we calculate:
+
+1. Total Racks = COUNT(racks WHERE zone_id = zone.id)
+2. Total Bins = COUNT(bins WHERE rack.zone_id = zone.id)
+3. Occupied Bins = COUNT(DISTINCT bin_id FROM inventory_stock 
+                         WHERE bin_id IN (zone's bins) 
+                         AND quantity > 0)
+4. Occupancy Percentage = (Occupied Bins / Total Bins) * 100
+
+Example Calculation:
+-------------------
+Zone A1 has:
+- 3 Racks (Rack 1, Rack 2, Rack 3)
+- Rack 1 has 2 bins (Bin 1, Bin 2)
+- Rack 2 has 2 bins (Bin 3, Bin 4)
+- Rack 3 has 1 bin (Bin 5)
+- Total Bins = 5
+
+Inventory Stock:
+- Bin 1: quantity = 10 (occupied)
+- Bin 2: quantity = 5 (occupied)
+- Bin 3: quantity = 0 (empty)
+- Bin 4: quantity = 8 (occupied)
+- Bin 5: quantity = 0 (empty)
+
+Result:
+- Total Racks = 3
+- Total Bins = 5
+- Occupied Bins = 3 (Bin 1, Bin 2, Bin 4)
+- Occupancy Percentage = (3 / 5) * 100 = 60%
+
+================================================================================
+4. FRONTEND-BACKEND INTERACTION
+================================================================================
+
+PAGE LOAD FLOW (Initial Load):
+------------------------------
+
+1. USER NAVIGATES TO PAGE
+   │
+   └─> User clicks "Warehouse Layout" in sidebar
+       └─> React Router navigates to /warehouse/zones
+           └─> Zones.jsx component mounts
+
+2. COMPONENT INITIALIZATION (Zones.jsx)
+   │
+   ├─> useState hooks initialize:
+   │   ├─> zones = [] (empty array)
+   │   ├─> loading = true
+   │   ├─> error = ""
+   │   ├─> isModalOpen = false
+   │   ├─> editingZone = null
+   │   └─> formData = { name: "", description: "" }
+   │
+   └─> useEffect(() => { fetchZones() }, []) runs
+       └─> Calls fetchZones() function
+
+3. FETCH ZONES FUNCTION (Zones.jsx)
+   │
+   └─> fetchZones()
+       ├─> Sets loading = true
+       ├─> Calls getZoneStatistics() from zoneService.js
+       │   └─> Returns Promise
+       │
+       └─> On success:
+           ├─> Sets zones = response.data
+           ├─> Sets loading = false
+           └─> Component re-renders with zone data
+
+4. API SERVICE CALL (zoneService.js)
+   │
+   └─> getZoneStatistics()
+       └─> api.get('/api/zones/statistics')
+           └─> Axios sends HTTP GET request
+
+5. REQUEST INTERCEPTOR (api.js)
+   │
+   └─> Before request:
+       ├─> Gets token from localStorage.getItem('token')
+       ├─> Adds Authorization header: "Bearer <token>"
+       └─> Adds Content-Type: "application/json"
+
+6. HTTP REQUEST SENT
+   │
+   └─> GET http://localhost:8081/api/zones/statistics
+       Headers:
+         - Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+         - Content-Type: application/json
+
+7. BACKEND SECURITY (SecurityConfig.java)
+   │
+   └─> JwtFilter validates token
+       ├─> Extracts token from Authorization header
+       ├─> Validates signature and expiration
+       └─> Sets SecurityContext with user details
+
+8. CONTROLLER (ZoneController.java)
+   │
+   └─> @GetMapping("/statistics")
+       ├─> @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR', 'WORKER')")
+       │   └─> Checks if user has required role
+       │
+       └─> Calls zoneService.getAllZoneStatistics()
+
+9. SERVICE LAYER (ZoneServiceImpl.java)
+   │
+   └─> getAllZoneStatistics()
+       ├─> Fetches all zones from ZoneRepository
+       ├─> For each zone:
+       │   ├─> Counts racks: rackRepo.findByZoneId(zoneId)
+       │   ├─> Gets all rack IDs
+       │   ├─> For each rack:
+       │   │   └─> Counts bins: binRepo.findByRackId(rackId)
+       │   ├─> Collects all bin IDs
+       │   ├─> Counts occupied bins:
+       │   │   └─> inventoryStockRepo.countByBinIdInAndQuantityGreaterThan(binIds, 0)
+       │   └─> Calculates occupancy percentage
+       │
+       └─> Returns List<ZoneStatisticsDTO>
+
+10. RESPONSE SENT
+    │
+    └─> HTTP 200 OK
+        Body: [
+          {
+            zoneId: 1,
+            zoneName: "Zone A1",
+            description: "Main storage area",
+            totalRacks: 3,
+            totalBins: 5,
+            occupiedBins: 3,
+            occupancyPercentage: 60.0
+          },
+          {
+            zoneId: 2,
+            zoneName: "Zone A2",
+            description: "Secondary storage",
+            totalRacks: 2,
+            totalBins: 4,
+            occupiedBins: 2,
+            occupancyPercentage: 50.0
+          }
+        ]
+
+11. FRONTEND RECEIVES RESPONSE
+    │
+    └─> Response Interceptor (api.js)
+        ├─> Checks status code (200 OK)
+        └─> Returns response.data
+            └─> getZoneStatistics() resolves with data
+                └─> fetchZones() updates state
+                    └─> Component re-renders
+
+12. UI RENDERING (Zones.jsx)
+    │
+    └─> Component renders:
+        ├─> If loading: Shows <Loading /> component
+        ├─> If zones.length === 0: Shows empty state
+        └─> If zones exist:
+            ├─> Renders zone cards grid
+            │   └─> For each zone:
+            │       ├─> Zone name
+            │       ├─> Total Racks count
+            │       ├─> Total Bins count
+            │       ├─> Occupancy percentage with progress bar
+            │       ├─> Occupied bins count
+            │       ├─> Status badge (Low/Medium/High Occupancy)
+            │       └─> Edit/Delete buttons (Admin only)
+            │
+            └─> Renders warehouse heat map
+                └─> For each zone:
+                    ├─> Zone name
+                    └─> Occupancy percentage
+                    └─> Color-coded background
+
+CREATE ZONE FLOW:
+-----------------
+
+1. USER CLICKS "ADD ZONE" BUTTON
+   │
+   └─> onClick={() => setIsModalOpen(true)}
+       └─> Sets isModalOpen = true
+           └─> Modal component renders
+
+2. USER FILLS FORM
+   │
+   ├─> Enters Zone Name: "Zone C1"
+   └─> Enters Description: "Cold storage area"
+       └─> onChange handlers update formData state
+
+3. USER CLICKS "CREATE ZONE"
+   │
+   └─> onSubmit={handleCreate}
+       ├─> e.preventDefault() (prevents page reload)
+       ├─> Sets submitting = true
+       └─> Calls createZone(formData)
+           └─> Payload: { name: "Zone C1", description: "Cold storage area" }
+
+4. API CALL (zoneService.js)
+   │
+   └─> createZone(zoneData)
+       └─> api.post('/api/zones/create', zoneData)
+           └─> HTTP POST request sent
+
+5. BACKEND PROCESSING
+   │
+   └─> ZoneController.create()
+       ├─> @PreAuthorize("hasRole('ADMIN')")
+       │   └─> Checks if user is ADMIN
+       │
+       └─> zoneService.createZone(zone)
+           └─> zoneRepo.save(zone)
+               └─> INSERT INTO zones (name, description) VALUES (...)
+
+6. RESPONSE
+   │
+   └─> HTTP 200 OK
+       Body: {
+         id: 3,
+         name: "Zone C1",
+         description: "Cold storage area"
+       }
+
+7. FRONTEND HANDLES SUCCESS
+   │
+   └─> handleCreate() continues
+       ├─> Closes modal: setIsModalOpen(false)
+       ├─> Resets form: setFormData({ name: "", description: "" })
+       └─> Refreshes data: fetchZones()
+           └─> New zone appears in dashboard
+
+EDIT ZONE FLOW:
+---------------
+
+1. USER CLICKS EDIT BUTTON ON ZONE CARD
+   │
+   └─> onClick={() => handleEdit(zone)}
+       └─> handleEdit(zone) called
+           ├─> Sets editingZone = zone
+           ├─> Sets formData = { name: zone.zoneName, description: zone.description }
+           └─> Sets isModalOpen = true
+               └─> Modal opens with pre-filled data
+
+2. USER MODIFIES DATA
+   │
+   └─> Changes name to "Zone C1 Updated"
+       └─> formData.name updated
+
+3. USER CLICKS "UPDATE ZONE"
+   │
+   └─> handleCreate() called (same function, checks editingZone)
+       ├─> Checks: if (editingZone) → true
+       └─> Calls updateZone(editingZone.zoneId, formData)
+           └─> Payload: { name: "Zone C1 Updated", description: "Cold storage area" }
+
+4. API CALL (zoneService.js)
+   │
+   └─> updateZone(zoneId, zoneData)
+       └─> api.put(`/api/zones/update/${zoneId}`, zoneData)
+           └─> HTTP PUT request sent
+
+5. BACKEND PROCESSING
+   │
+   └─> ZoneController.updateZone()
+       ├─> @PreAuthorize("hasRole('ADMIN')")
+       └─> zoneService.updateZone(zoneId, zoneUpdateDTO)
+           ├─> Finds existing zone: zoneRepo.findById(zoneId)
+           ├─> Updates fields: existingZone.setName(...)
+           └─> Saves: zoneRepo.save(existingZone)
+               └─> UPDATE zones SET name=?, description=? WHERE id=?
+
+6. RESPONSE
+   │
+   └─> HTTP 200 OK
+       Body: {
+         id: 3,
+         name: "Zone C1 Updated",
+         description: "Cold storage area"
+       }
+
+7. FRONTEND HANDLES SUCCESS
+   │
+   └─> handleCreate() continues
+       ├─> Closes modal
+       ├─> Resets editingZone = null
+       └─> Refreshes data: fetchZones()
+           └─> Updated zone appears in dashboard
+
+DELETE ZONE FLOW:
+-----------------
+
+1. USER CLICKS DELETE BUTTON ON ZONE CARD
+   │
+   └─> onClick={() => handleDelete(zone.zoneId)}
+       └─> handleDelete(zoneId) called
+           └─> Shows confirmation dialog:
+               "Are you sure you want to delete this zone?"
+
+2. USER CONFIRMS DELETION
+   │
+   └─> Clicks "OK" in confirmation dialog
+       └─> Calls deleteZone(zoneId)
+
+3. API CALL (zoneService.js)
+   │
+   └─> deleteZone(zoneId)
+       └─> api.delete(`/api/zones/delete/${zoneId}`)
+           └─> HTTP DELETE request sent
+
+4. BACKEND PROCESSING
+   │
+   └─> ZoneController.deleteZone()
+       ├─> @PreAuthorize("hasRole('ADMIN')")
+       └─> zoneService.deleteZone(zoneId)
+           └─> zoneRepo.deleteById(zoneId)
+               └─> DELETE FROM zones WHERE id=?
+
+5. RESPONSE
+   │
+   └─> HTTP 204 No Content
+       └─> No response body
+
+6. FRONTEND HANDLES SUCCESS
+   │
+   └─> handleDelete() continues
+       └─> Refreshes data: fetchZones()
+           └─> Deleted zone removed from dashboard
+
+================================================================================
+5. API ENDPOINTS
+================================================================================
+
+ENDPOINT DETAILS:
+-----------------
+
+| Method | Endpoint | Authorization | Description | Request Body | Response |
+|--------|----------|--------------|-------------|--------------|----------|
+| GET | `/api/zones/all` | ADMIN, SUPERVISOR, WORKER | Get all zones | None | `List<Zone>` |
+| GET | `/api/zones/statistics` | ADMIN, SUPERVISOR, WORKER | Get zone statistics | None | `List<ZoneStatisticsDTO>` |
+| GET | `/api/zones/{zoneId}` | ADMIN, SUPERVISOR, WORKER | Get zone by ID | None | `Zone` |
+| POST | `/api/zones/create` | ADMIN | Create new zone | `{name, description}` | `Zone` |
+| PUT | `/api/zones/update/{zoneId}` | ADMIN | Update zone | `{name, description}` | `Zone` |
+| DELETE | `/api/zones/delete/{zoneId}` | ADMIN | Delete zone | None | `204 No Content` |
+
+REQUEST/RESPONSE EXAMPLES:
+---------------------------
+
+Get Zone Statistics Request:
+GET /api/zones/statistics HTTP/1.1
+Host: localhost:8081
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Content-Type: application/json
+
+Get Zone Statistics Response (Success):
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+[
+  {
+    "zoneId": 1,
+    "zoneName": "Zone A1",
+    "description": "Main storage area",
+    "totalRacks": 3,
+    "totalBins": 5,
+    "occupiedBins": 3,
+    "occupancyPercentage": 60.0
+  },
+  {
+    "zoneId": 2,
+    "zoneName": "Zone A2",
+    "description": "Secondary storage",
+    "totalRacks": 2,
+    "totalBins": 4,
+    "occupiedBins": 2,
+    "occupancyPercentage": 50.0
+  }
+]
+
+Create Zone Request:
+POST /api/zones/create HTTP/1.1
+Host: localhost:8081
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Content-Type: application/json
+
+{
+  "name": "Zone C1",
+  "description": "Cold storage area"
+}
+
+Create Zone Response (Success):
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "id": 3,
+  "name": "Zone C1",
+  "description": "Cold storage area"
+}
+
+Update Zone Request:
+PUT /api/zones/update/3 HTTP/1.1
+Host: localhost:8081
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Content-Type: application/json
+
+{
+  "name": "Zone C1 Updated",
+  "description": "Cold storage area - updated"
+}
+
+Update Zone Response (Success):
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "id": 3,
+  "name": "Zone C1 Updated",
+  "description": "Cold storage area - updated"
+}
+
+Delete Zone Request:
+DELETE /api/zones/delete/3 HTTP/1.1
+Host: localhost:8081
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+Delete Zone Response (Success):
+HTTP/1.1 204 No Content
+
+================================================================================
+6. DATA FLOW DIAGRAMS
+================================================================================
+
+COMPLETE PAGE LOAD FLOW:
+------------------------
+
+[USER]                    [FRONTEND]                  [BACKEND]                    [DATABASE]
+  │                           │                           │                            │
+  │ 1. Click "Warehouse       │                           │                            │
+  │    Layout" in sidebar     │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 2. Zones.jsx mounts      │                            │
+  │                           │    - useState initialized │                            │
+  │                           │    - useEffect runs      │                            │
+  │                           │                           │                            │
+  │                           │ 3. fetchZones() called    │                            │
+  │                           │                           │                            │
+  │                           │ 4. getZoneStatistics()    │                            │
+  │                           │    from zoneService.js    │                            │
+  │                           │                           │                            │
+  │                           │ 5. GET /api/zones/        │                            │
+  │                           │     statistics            │                            │
+  │                           │    Authorization: Bearer  │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 6. JwtFilter validates     │
+  │                           │                           │    token & sets            │
+  │                           │                           │    SecurityContext         │
+  │                           │                           │                            │
+  │                           │                           │ 7. @PreAuthorize checks   │
+  │                           │                           │    hasAnyRole(...)         │
+  │                           │                           │    ✓ User authorized       │
+  │                           │                           │                            │
+  │                           │                           │ 8. ZoneController         │
+  │                           │                           │    .getZoneStatistics()    │
+  │                           │                           │                            │
+  │                           │                           │ 9. ZoneServiceImpl        │
+  │                           │                           │    .getAllZoneStatistics()│
+  │                           │                           │                            │
+  │                           │                           │ 10. ZoneRepository        │
+  │                           │                           │     .findAll()            │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 11. SELECT * FROM zones
+  │                           │                           │                            │
+  │                           │                           │                            │ 12. Return List<Zone>
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 13. For each zone:        │
+  │                           │                           │     - Count racks          │
+  │                           │                           │     - Count bins           │
+  │                           │                           │     - Count occupied bins  │
+  │                           │                           │     - Calculate %         │
+  │                           │                           │                            │
+  │                           │                           │ 14. RackRepository        │
+  │                           │                           │     .findByZoneId()       │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 15. SELECT * FROM racks
+  │                           │                           │                            │     WHERE zone_id=?
+  │                           │                           │                            │
+  │                           │                           │                            │ 16. Return List<Rack>
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 17. BinRepository         │
+  │                           │                           │     .findByRackId()       │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 18. SELECT * FROM bins
+  │                           │                           │                            │     WHERE rack_id=?
+  │                           │                           │                            │
+  │                           │                           │                            │ 19. Return List<Bin>
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 20. InventoryStockRepo    │
+  │                           │                           │     .countByBinIdIn...()  │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 21. SELECT COUNT(*)
+  │                           │                           │                            │     FROM inventory_stock
+  │                           │                           │                            │     WHERE bin_id IN (...)
+  │                           │                           │                            │     AND quantity > 0
+  │                           │                           │                            │
+  │                           │                           │                            │ 22. Return count
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 23. Build ZoneStatisticsDTO│
+  │                           │                           │     Return List<DTO>      │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 24. Update zones state    │                            │
+  │                           │     setZones(data)        │                            │
+  │                           │                           │                            │
+  │                           │ 25. Render zone cards     │                            │
+  │                           │     - Zone name           │                            │
+  │                           │     - Statistics          │                            │
+  │                           │     - Progress bars       │                            │
+  │                           │     - Heat map            │                            │
+  │<──────────────────────────│                           │                            │
+  │                           │                           │                            │
+  │ 26. See warehouse         │                           │                            │
+  │     dashboard with        │                           │                            │
+  │     all zones             │                           │                            │
+  │                           │                           │                            │
+
+CREATE ZONE FLOW:
+-----------------
+
+[USER]                    [FRONTEND]                  [BACKEND]                    [DATABASE]
+  │                           │                           │                            │
+  │ 1. Click "+ Add Zone"     │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 2. setIsModalOpen(true)   │                            │
+  │                           │    Modal renders          │                            │
+  │                           │                           │                            │
+  │ 3. Fill form               │                           │                            │
+  │    Name: "Zone C1"        │                           │                            │
+  │    Description: "Cold..." │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │ 4. Click "Create Zone"    │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 5. handleCreate()         │                            │
+  │                           │    - e.preventDefault()   │                            │
+  │                           │    - createZone(formData)  │                            │
+  │                           │                           │                            │
+  │                           │ 6. POST /api/zones/create │                            │
+  │                           │    {                      │                            │
+  │                           │      name: "Zone C1",     │                            │
+  │                           │      description: "Cold..."│                            │
+  │                           │    }                      │                            │
+  │                           │    Authorization: Bearer  │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 7. JWT validation          │
+  │                           │                           │ 8. Authorization check    │
+  │                           │                           │    ✓ User is ADMIN         │
+  │                           │                           │                            │
+  │                           │                           │ 9. ZoneController         │
+  │                           │                           │     .create()              │
+  │                           │                           │                            │
+  │                           │                           │ 10. ZoneServiceImpl       │
+  │                           │                           │      .createZone()        │
+  │                           │                           │                            │
+  │                           │                           │ 11. ZoneRepository.save() │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 12. INSERT INTO zones
+  │                           │                           │                            │     (name, description)
+  │                           │                           │                            │     VALUES (...)
+  │                           │                           │                            │
+  │                           │                           │                            │ 13. Return saved Zone
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 14. Return Zone object    │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 15. Handle success        │                            │
+  │                           │    - Close modal          │                            │
+  │                           │    - Reset form           │                            │
+  │                           │    - fetchZones()          │                            │
+  │                           │                           │                            │
+  │                           │ 16. GET /api/zones/       │                            │
+  │                           │     statistics            │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 17. Calculate statistics │
+  │                           │                           │     (includes new zone)    │
+  │                           │                           │                            │
+  │                           │                           │ 18. Return updated list   │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 19. Update UI with        │                            │
+  │                           │     new zone card         │                            │
+  │<──────────────────────────│                           │                            │
+  │                           │                           │                            │
+  │ 20. See new zone in       │                           │                            │
+  │     dashboard             │                           │                            │
+  │                           │                           │                            │
+
+EDIT ZONE FLOW:
+---------------
+
+[USER]                    [FRONTEND]                  [BACKEND]                    [DATABASE]
+  │                           │                           │                            │
+  │ 1. Click Edit button (✏️)  │                           │                            │
+  │    on zone card           │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 2. handleEdit(zone)       │                            │
+  │                           │    - setEditingZone(zone) │                            │
+  │                           │    - setFormData({...})   │                            │
+  │                           │    - setIsModalOpen(true) │                            │
+  │                           │                           │                            │
+  │                           │ 3. Modal opens with       │                            │
+  │                           │     pre-filled data       │                            │
+  │                           │                           │                            │
+  │ 4. Modify zone name       │                           │                            │
+  │    "Zone C1" →            │                           │                            │
+  │    "Zone C1 Updated"      │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │ 5. Click "Update Zone"    │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 6. handleCreate()         │                            │
+  │                           │    - Checks editingZone   │                            │
+  │                           │    - Calls updateZone()   │                            │
+  │                           │                           │                            │
+  │                           │ 7. PUT /api/zones/        │                            │
+  │                           │     update/3              │                            │
+  │                           │    {                      │                            │
+  │                           │      name: "Zone C1       │                            │
+  │                           │       Updated",            │                            │
+  │                           │      description: "..."   │                            │
+  │                           │    }                      │                            │
+  │                           │    Authorization: Bearer  │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 8. JWT validation          │
+  │                           │                           │ 9. Authorization check    │
+  │                           │                           │    ✓ User is ADMIN         │
+  │                           │                           │                            │
+  │                           │                           │ 10. ZoneController        │
+  │                           │                           │      .updateZone()         │
+  │                           │                           │                            │
+  │                           │                           │ 11. ZoneServiceImpl       │
+  │                           │                           │      .updateZone()         │
+  │                           │                           │      - Find existing zone │
+  │                           │                           │      - Update fields      │
+  │                           │                           │                            │
+  │                           │                           │ 12. ZoneRepository.save()  │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 13. UPDATE zones SET
+  │                           │                           │                            │     name=?, description=?
+  │                           │                           │                            │     WHERE id=?
+  │                           │                           │                            │
+  │                           │                           │                            │ 14. Return updated Zone
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 15. Return Zone object    │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 16. Handle success        │                            │
+  │                           │    - Close modal          │                            │
+  │                           │    - Reset editingZone    │                            │
+  │                           │    - fetchZones()          │                            │
+  │                           │                           │                            │
+  │                           │ 17. GET /api/zones/        │                            │
+  │                           │     statistics            │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 18. Return updated list   │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 19. Update UI with        │                            │
+  │                           │     updated zone card     │                            │
+  │<──────────────────────────│                           │                            │
+  │                           │                           │                            │
+  │ 20. See updated zone      │                           │                            │
+  │     name in dashboard     │                           │                            │
+  │                           │                           │                            │
+
+DELETE ZONE FLOW:
+-----------------
+
+[USER]                    [FRONTEND]                  [BACKEND]                    [DATABASE]
+  │                           │                           │                            │
+  │ 1. Click Delete button    │                           │                            │
+  │    (🗑️) on zone card      │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 2. handleDelete(zoneId)   │                            │
+  │                           │    - Shows confirm dialog │                            │
+  │                           │                           │                            │
+  │ 2. Click "OK" to confirm  │                           │                            │
+  ├──────────────────────────>│                           │                            │
+  │                           │                           │                            │
+  │                           │ 3. deleteZone(zoneId)     │                            │
+  │                           │                           │                            │
+  │                           │ 4. DELETE /api/zones/     │                            │
+  │                           │     delete/3              │                            │
+  │                           │    Authorization: Bearer  │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 5. JWT validation          │
+  │                           │                           │ 6. Authorization check    │
+  │                           │                           │    ✓ User is ADMIN         │
+  │                           │                           │                            │
+  │                           │                           │ 7. ZoneController         │
+  │                           │                           │     .deleteZone()          │
+  │                           │                           │                            │
+  │                           │                           │ 8. ZoneServiceImpl         │
+  │                           │                           │     .deleteZone()          │
+  │                           │                           │                            │
+  │                           │                           │ 9. ZoneRepository         │
+  │                           │                           │     .deleteById()          │
+  │                           │                           ├───────────────────────────>│
+  │                           │                           │                            │
+  │                           │                           │                            │ 10. DELETE FROM zones
+  │                           │                           │                            │     WHERE id=?
+  │                           │                           │                            │
+  │                           │                           │                            │ 11. Return success
+  │                           │                           │<───────────────────────────│
+  │                           │                           │                            │
+  │                           │                           │ 12. Return 204 No Content │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 13. Handle success        │                            │
+  │                           │    - fetchZones()          │                            │
+  │                           │                           │                            │
+  │                           │ 14. GET /api/zones/        │                            │
+  │                           │     statistics            │                            │
+  │                           ├───────────────────────────>│                            │
+  │                           │                           │                            │
+  │                           │                           │ 15. Return updated list   │
+  │                           │                           │     (without deleted zone) │
+  │                           │<───────────────────────────│                            │
+  │                           │                           │                            │
+  │                           │ 16. Update UI - remove     │                            │
+  │                           │     deleted zone card      │                            │
+  │<──────────────────────────│                           │                            │
+  │                           │                           │                            │
+  │ 17. See zone removed       │                           │                            │
+  │     from dashboard         │                           │                            │
+  │                           │                           │                            │
+
+================================================================================
+7. COMPONENT STRUCTURE
+================================================================================
+
+FRONTEND COMPONENT HIERARCHY:
+------------------------------
+
+App.jsx
+└─> BrowserRouter
+    └─> AppRoutes.jsx
+        └─> ProtectedRoute (checks authentication)
+            └─> Layout.jsx
+                ├─> Sidebar.jsx
+                │   └─> Link to /warehouse/zones ("Warehouse Layout")
+                │
+                └─> Zones.jsx (Main Component)
+                    │
+                    ├─> Header Section
+                    │   ├─> Title: "Warehouse Layout"
+                    │   ├─> Subtitle: "View and manage..."
+                    │   └─> Button: "+ Add Zone" (Admin only)
+                    │
+                    ├─> Alert Component (Error Display)
+                    │   └─> Shows error messages
+                    │
+                    ├─> Empty State (if zones.length === 0)
+                    │   ├─> Warehouse Icon
+                    │   └─> "No zones found" message
+                    │
+                    ├─> Zone Cards Grid (if zones exist)
+                    │   └─> For each zone:
+                    │       └─> Card Component
+                    │           ├─> Zone Header
+                    │           │   ├─> Zone Name (h3)
+                    │           │   └─> Action Buttons (Admin only)
+                    │           │       ├─> Edit Button (Edit2 icon)
+                    │           │       └─> Delete Button (Trash2 icon)
+                    │           │
+                    │           ├─> Statistics Grid
+                    │           │   ├─> Total Racks (display count)
+                    │           │   └─> Total Bins (display count)
+                    │           │
+                    │           ├─> Occupancy Section
+                    │           │   ├─> Occupancy Label & Percentage
+                    │           │   ├─> Progress Component (visual bar)
+                    │           │   └─> Occupied Bins Count
+                    │           │
+                    │           └─> Status Badge
+                    │               └─> Low/Medium/High Occupancy
+                    │
+                    ├─> Warehouse Heat Map Section
+                    │   ├─> Title: "Warehouse Heat Map"
+                    │   └─> Heat Map Grid
+                    │       └─> For each zone:
+                    │           └─> Heat Map Card
+                    │               ├─> Zone Name
+                    │               ├─> Occupancy Percentage
+                    │               └─> Color-coded Background
+                    │
+                    └─> Modal Component (Create/Edit Zone)
+                        ├─> Modal Header
+                        │   ├─> Title: "Create Zone" or "Edit Zone"
+                        │   └─> Close Button (X)
+                        │
+                        └─> Form
+                            ├─> Input Component
+                            │   └─> Zone Name field
+                            │
+                            ├─> Textarea
+                            │   └─> Description field
+                            │
+                            └─> Form Actions
+                                ├─> Submit Button
+                                │   └─> "Create Zone" or "Update Zone"
+                                └─> Cancel Button
+
+COMPONENT DEPENDENCIES:
+-----------------------
+
+Zones.jsx imports:
+├─> React Hooks
+│   ├─> useState (state management)
+│   └─> useEffect (side effects)
+│
+├─> Icons (lucide-react)
+│   ├─> Plus (add button icon)
+│   ├─> Warehouse (empty state icon)
+│   ├─> Edit2 (edit button icon)
+│   └─> Trash2 (delete button icon)
+│
+├─> Common Components
+│   ├─> Alert (error messages)
+│   ├─> Badge (status indicators)
+│   ├─> Button (action buttons)
+│   ├─> Card (container)
+│   ├─> Input (form input)
+│   ├─> Loading (loading state)
+│   ├─> Modal (dialog)
+│   └─> Progress (occupancy bar)
+│
+├─> Services
+│   ├─> authService (getRole)
+│   └─> zoneService (API calls)
+│
+└─> Utilities
+    └─> (none in this component)
+
+STATE MANAGEMENT IN Zones.jsx:
+-------------------------------
+
+State Variables:
+├─> zones: Array<ZoneStatisticsDTO>
+│   └─> Stores all zone statistics data
+│
+├─> loading: Boolean
+│   └─> Indicates if data is being fetched
+│
+├─> error: String
+│   └─> Stores error messages
+│
+├─> isModalOpen: Boolean
+│   └─> Controls modal visibility
+│
+├─> editingZone: ZoneStatisticsDTO | null
+│   └─> Stores zone being edited (null when creating)
+│
+├─> formData: Object
+│   ├─> name: String
+│   └─> description: String
+│
+└─> submitting: Boolean
+    └─> Indicates if form is being submitted
+
+State Flow:
+-----------
+1. Component mounts
+   └─> loading = true, zones = []
+
+2. fetchZones() called
+   └─> API call initiated
+
+3. API response received
+   ├─> loading = false
+   └─> zones = [zone1, zone2, ...]
+
+4. User clicks "Add Zone"
+   └─> isModalOpen = true
+
+5. User fills form
+   └─> formData updated via onChange
+
+6. User submits form
+   ├─> submitting = true
+   ├─> API call made
+   ├─> On success:
+   │   ├─> isModalOpen = false
+   │   ├─> formData = { name: "", description: "" }
+   │   ├─> editingZone = null
+   │   └─> fetchZones() called (refresh)
+   └─> On error:
+       ├─> submitting = false
+       └─> error = "Failed to..."
+
+7. User clicks Edit button
+   ├─> editingZone = selectedZone
+   ├─> formData = { name: zone.zoneName, description: zone.description }
+   └─> isModalOpen = true
+
+8. User clicks Delete button
+   ├─> Confirmation dialog shown
+   └─> If confirmed:
+       ├─> API call made
+       └─> fetchZones() called (refresh)
+
+================================================================================
+8. STATISTICS CALCULATION FLOW
+================================================================================
+
+HOW OCCUPANCY IS CALCULATED:
+----------------------------
+
+Step-by-Step Process:
+
+1. FETCH ALL ZONES
+   └─> ZoneRepository.findAll()
+       └─> Returns: List<Zone>
+
+2. FOR EACH ZONE:
+   │
+   ├─> COUNT RACKS
+   │   └─> RackRepository.findByZoneId(zoneId)
+   │       └─> Returns: List<Rack>
+   │           └─> totalRacks = racks.size()
+   │
+   ├─> COLLECT RACK IDs
+   │   └─> rackIds = [rack1.id, rack2.id, ...]
+   │
+   ├─> COUNT BINS FOR EACH RACK
+   │   └─> For each rackId:
+   │       └─> BinRepository.findByRackId(rackId)
+   │           └─> Returns: List<Bin>
+   │               └─> totalBins += bins.size()
+   │
+   ├─> COLLECT BIN IDs
+   │   └─> binIds = [bin1.id, bin2.id, bin3.id, ...]
+   │
+   ├─> COUNT OCCUPIED BINS
+   │   └─> InventoryStockRepository
+   │       .countByBinIdInAndQuantityGreaterThan(binIds, 0)
+   │       └─> SQL Query:
+   │           SELECT COUNT(DISTINCT bin_id)
+   │           FROM inventory_stock
+   │           WHERE bin_id IN (binIds)
+   │           AND quantity > 0
+   │       └─> Returns: occupiedBins count
+   │
+   └─> CALCULATE OCCUPANCY PERCENTAGE
+       └─> If totalBins > 0:
+           └─> occupancyPercentage = (occupiedBins / totalBins) * 100
+           └─> Rounded to 1 decimal place
+       └─> If totalBins == 0:
+           └─> occupancyPercentage = 0.0
+
+3. BUILD ZoneStatisticsDTO
+   └─> For each zone:
+       ├─> zoneId = zone.id
+       ├─> zoneName = zone.name
+       ├─> description = zone.description
+       ├─> totalRacks = calculated count
+       ├─> totalBins = calculated count
+       ├─> occupiedBins = calculated count
+       └─> occupancyPercentage = calculated percentage
+
+4. RETURN List<ZoneStatisticsDTO>
+
+EXAMPLE CALCULATION:
+--------------------
+
+Zone: Zone A1 (id = 1)
+
+Step 1: Count Racks
+└─> SELECT * FROM racks WHERE zone_id = 1
+    Returns: [Rack(id=1), Rack(id=2), Rack(id=3)]
+    totalRacks = 3
+
+Step 2: Count Bins
+└─> For Rack 1:
+    └─> SELECT * FROM bins WHERE rack_id = 1
+        Returns: [Bin(id=1), Bin(id=2)]
+        totalBins += 2
+
+└─> For Rack 2:
+    └─> SELECT * FROM bins WHERE rack_id = 2
+        Returns: [Bin(id=3), Bin(id=4)]
+        totalBins += 2
+
+└─> For Rack 3:
+    └─> SELECT * FROM bins WHERE rack_id = 3
+        Returns: [Bin(id=5)]
+        totalBins += 1
+
+    Total: totalBins = 5
+    binIds = [1, 2, 3, 4, 5]
+
+Step 3: Count Occupied Bins
+└─> SELECT COUNT(DISTINCT bin_id)
+    FROM inventory_stock
+    WHERE bin_id IN (1, 2, 3, 4, 5)
+    AND quantity > 0
+
+    Inventory Stock Data:
+    - bin_id=1, quantity=10 ✓ (occupied)
+    - bin_id=2, quantity=5  ✓ (occupied)
+    - bin_id=3, quantity=0   ✗ (empty)
+    - bin_id=4, quantity=8   ✓ (occupied)
+    - bin_id=5, quantity=0   ✗ (empty)
+
+    Returns: occupiedBins = 3
+
+Step 4: Calculate Percentage
+└─> occupancyPercentage = (3 / 5) * 100 = 60.0%
+
+Step 5: Build DTO
+└─> ZoneStatisticsDTO {
+      zoneId: 1,
+      zoneName: "Zone A1",
+      description: "Main storage",
+      totalRacks: 3,
+      totalBins: 5,
+      occupiedBins: 3,
+      occupancyPercentage: 60.0
+    }
+
+OCCUPANCY STATUS LOGIC:
+-----------------------
+
+Frontend determines status badge based on percentage:
+
+getOccupancyStatus(percentage):
+├─> If percentage >= 80:
+│   └─> Return: { label: "High Occupancy", variant: "red" }
+│
+├─> If percentage >= 60:
+│   └─> Return: { label: "Medium Occupancy", variant: "orange" }
+│
+└─> Otherwise:
+    └─> Return: { label: "Low Occupancy", variant: "green" }
+
+HEAT MAP COLOR LOGIC:
+---------------------
+
+getHeatMapColor(percentage):
+├─> If percentage >= 80:
+│   └─> Return: "bg-red-100" (light red)
+│
+├─> If percentage >= 70:
+│   └─> Return: "bg-orange-200" (medium orange)
+│
+├─> If percentage >= 60:
+│   └─> Return: "bg-orange-100" (light orange)
+│
+└─> Otherwise:
+    └─> Return: "bg-green-100" (light green)
+
+================================================================================
+9. SECURITY MECHANISMS
+================================================================================
+
+AUTHENTICATION:
+---------------
+- All API endpoints require JWT authentication
+- Token stored in localStorage (key: "token")
+- Token added to every request via Authorization header
+- Token validated by JwtFilter on backend
+
+AUTHORIZATION BY ENDPOINT:
+--------------------------
+
+| Endpoint | Method | Required Role |
+|----------|--------|---------------|
+| /api/zones/all | GET | ADMIN, SUPERVISOR, WORKER |
+| /api/zones/statistics | GET | ADMIN, SUPERVISOR, WORKER |
+| /api/zones/{id} | GET | ADMIN, SUPERVISOR, WORKER |
+| /api/zones/create | POST | ADMIN only |
+| /api/zones/update/{id} | PUT | ADMIN only |
+| /api/zones/delete/{id} | DELETE | ADMIN only |
+
+FRONTEND ROLE CHECK:
+--------------------
+- Uses getRole() from authService.js
+- Checks localStorage.getItem('role')
+- Sets canManage = (role === "ADMIN")
+- Edit/Delete buttons only shown if canManage === true
+
+BACKEND ROLE CHECK:
+-------------------
+- Uses @PreAuthorize annotation
+- Spring Security evaluates role
+- Returns 403 Forbidden if unauthorized
+- Frontend handles 403 errors gracefully
+
+================================================================================
+10. ERROR HANDLING
+================================================================================
+
+FRONTEND ERROR HANDLING:
+------------------------
+
+1. API CALL ERRORS (zoneService.js)
+   └─> Axios throws error
+       └─> Caught by try-catch in Zones.jsx
+           └─> Error message extracted:
+               ├─> error.response?.data?.message (if available)
+               └─> Default message: "Failed to..."
+           └─> Sets error state
+               └─> Alert component displays error
+
+2. NETWORK ERRORS
+   └─> Request fails (no internet, server down)
+       └─> Axios error thrown
+           └─> Caught and displayed in Alert
+
+3. VALIDATION ERRORS
+   └─> Form validation (required fields)
+       └─> HTML5 validation prevents submission
+           └─> Browser shows native validation message
+
+4. LOADING ERRORS
+   └─> If fetchZones() fails:
+       ├─> Sets error = "Failed to load zones"
+       └─> Sets loading = false
+           └─> Component shows error Alert
+
+BACKEND ERROR RESPONSE CODES:
+------------------------------
+
+200 OK
+  └─> Request successful
+
+400 Bad Request
+  └─> Invalid request data
+      Example: Missing required field "name"
+
+401 Unauthorized
+  └─> No token or invalid token
+      Example: Token expired
+
+403 Forbidden
+  └─> Valid token but insufficient permissions
+      Example: SUPERVISOR trying to create zone
+
+404 Not Found
+  └─> Resource not found
+      Example: Zone ID doesn't exist
+
+500 Internal Server Error
+  └─> Server-side error
+      Example: Database connection failed
+
+ERROR HANDLING FLOW:
+--------------------
+
+[FRONTEND]                  [BACKEND]                    [RESPONSE]
+  │                           │                            │
+  │ 1. API call made          │                            │
+  ├──────────────────────────>│                            │
+  │                           │                            │
+  │                           │ 2. Request processed       │
+  │                           │                            │
+  │                           │ 3. Error occurs            │
+  │                           │    (e.g., validation fails)│
+  │                           │                            │
+  │                           │ 4. Returns error response  │
+  │<──────────────────────────│                            │
+  │                           │                            │
+  │ 5. Response Interceptor   │                            │
+  │    checks status code     │                            │
+  │    - If 401: Clear token, │                            │
+  │      redirect to login    │                            │
+  │    - If other: Return     │                            │
+  │      error to caller      │                            │
+  │                           │                            │
+  │ 6. try-catch catches      │                            │
+  │    error                  │                            │
+  │                           │                            │
+  │ 7. Extract error message  │                            │
+  │    error.response?.data   │                            │
+  │    ?.message              │                            │
+  │                           │                            │
+  │ 8. Set error state        │                            │
+  │    setError("...")        │                            │
+  │                           │                            │
+  │ 9. Alert component        │                            │
+  │    displays error         │                            │
+  │                           │                            │
+
+================================================================================
+11. TECHNICAL STACK
+================================================================================
+
+FRONTEND:
+---------
+- React 19.2.0 (UI Framework)
+- React Router DOM 7.10.1 (Routing)
+- Axios 1.13.2 (HTTP Client)
+- Tailwind CSS 4.1.17 (Styling)
+- Radix UI (Progress Component)
+- Lucide React (Icons)
+- Vite (Build Tool)
+
+BACKEND:
+--------
+- Spring Boot 3.x (Framework)
+- Spring Security (JWT Authentication)
+- Spring Data JPA (Database Access)
+- MySQL Database (Data Storage)
+- Lombok (Code Generation)
+- Jackson (JSON Serialization)
+
+DATABASE SCHEMA:
+----------------
+
+CREATE TABLE zones (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    description VARCHAR(500)
+);
+
+CREATE TABLE racks (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    zone_id BIGINT NOT NULL,
+    name VARCHAR(255),
+    FOREIGN KEY (zone_id) REFERENCES zones(id)
+);
+
+CREATE TABLE bins (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    rack_id BIGINT,
+    code VARCHAR(255),
+    capacity INT,
+    FOREIGN KEY (rack_id) REFERENCES racks(id)
+);
+
+CREATE TABLE inventory_stock (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    sku_id BIGINT NOT NULL,
+    bin_id BIGINT NOT NULL,
+    quantity INT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sku_id) REFERENCES skus(id),
+    FOREIGN KEY (bin_id) REFERENCES bins(id)
+);
+
+KEY FILES:
+----------
+
+Frontend:
+├─> FRONTEND/src/pages/warehouse/Zones.jsx (Main component)
+├─> FRONTEND/src/services/zoneService.js (API service)
+├─> FRONTEND/src/components/common/Progress.jsx (Progress bar)
+├─> FRONTEND/src/components/common/Card.jsx (Card container)
+├─> FRONTEND/src/components/common/Badge.jsx (Status badge)
+└─> FRONTEND/src/components/common/Modal.jsx (Dialog)
+
+Backend:
+├─> Full-Backend/backend/src/main/java/com/visera/backend/Controller/ZoneController.java
+├─> Full-Backend/backend/src/main/java/com/visera/backend/Service/ZoneService.java
+├─> Full-Backend/backend/src/main/java/com/visera/backend/Service/ZoneServiceImpl.java
+├─> Full-Backend/backend/src/main/java/com/visera/backend/DTOs/ZoneStatisticsDTO.java
+├─> Full-Backend/backend/src/main/java/com/visera/backend/DTOs/ZoneUpdateDTO.java
+├─> Full-Backend/backend/src/main/java/com/visera/backend/Repository/ZoneRepository.java
+├─> Full-Backend/backend/src/main/java/com/visera/backend/Repository/RackRepository.java
+├─> Full-Backend/backend/src/main/java/com/visera/backend/Repository/BinRepository.java
+└─> Full-Backend/backend/src/main/java/com/visera/backend/Repository/InventoryStockRepository.java
+
+================================================================================
+SUMMARY
+================================================================================
+
+KEY POINTS FOR BEGINNERS:
+-------------------------
+
+1. PAGE STRUCTURE:
+   - Dashboard view with zone cards
+   - Each card shows zone statistics
+   - Heat map provides quick overview
+   - Modal for creating/editing zones
+
+2. DATA FLOW:
+   - Frontend requests statistics → Backend calculates → Returns DTO → Frontend displays
+   - Statistics calculated from: Zones → Racks → Bins → Inventory Stock
+
+3. API ENDPOINTS:
+   - GET /api/zones/statistics (main endpoint for dashboard)
+   - POST /api/zones/create (create new zone)
+   - PUT /api/zones/update/{id} (update zone)
+   - DELETE /api/zones/delete/{id} (delete zone)
+
+4. COMPONENTS:
+   - Zones.jsx: Main dashboard component
+   - Card: Container for zone information
+   - Progress: Visual occupancy bar
+   - Badge: Status indicator
+   - Modal: Create/Edit form dialog
+
+5. STATE MANAGEMENT:
+   - useState hooks manage component state
+   - useEffect fetches data on mount
+   - State updates trigger re-renders
+
+6. PERMISSIONS:
+   - All users can view zones
+   - Only ADMIN can create/edit/delete
+
+COMMON ISSUES & SOLUTIONS:
+--------------------------
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| No zones showing | No data in database | Create zones via "Add Zone" button |
+| 403 Forbidden | User not ADMIN | Log in as ADMIN user |
+| 401 Unauthorized | Token expired | Re-login required |
+| Statistics show 0% | No racks/bins created | Create racks and bins first |
+| Occupancy not updating | No inventory stock | Add inventory to bins |
+| Modal not closing | State not reset | Check handleCloseModal() |
+
+LEARNING PATH FOR BEGINNERS:
+----------------------------
+
+1. START HERE:
+   - Understand the warehouse hierarchy (Zone → Rack → Bin)
+   - Learn what statistics are displayed
+   - See how the UI is structured
+
+2. FRONTEND:
+   - Study Zones.jsx component structure
+   - Understand useState and useEffect hooks
+   - Learn how API calls are made
+   - See how data is displayed in UI
+
+3. BACKEND:
+   - Study ZoneController endpoints
+   - Understand ZoneServiceImpl statistics calculation
+   - Learn how repositories query database
+   - See how DTOs structure data
+
+4. DATA FLOW:
+   - Trace a request from frontend to backend
+   - Understand how statistics are calculated
+   - See how responses are handled
+   - Learn error handling patterns
+
+5. PRACTICE:
+   - Create a zone and see it appear
+   - Edit a zone and see it update
+   - Delete a zone and see it removed
+   - Add racks/bins and see statistics change
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
+
+
+
+
+
+
+

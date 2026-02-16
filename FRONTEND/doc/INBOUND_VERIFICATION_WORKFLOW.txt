@@ -1,0 +1,787 @@
+================================================================================
+    INBOUND VERIFICATION WORKFLOW - COMPLETE DOCUMENTATION
+================================================================================
+
+This document explains the complete workflow for inbound shipment verification,
+from shipment assignment to final verification and bin assignment.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. Overview
+2. Shipment Assignment Flow
+3. Worker Getting Inbound Requests
+4. Image Verification Process
+5. Product Match/Mismatch Logic
+6. API Endpoints Explained
+7. Component Interactions
+8. Complete Flow Diagram
+9. Code Walkthrough
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+The inbound verification system allows workers to:
+- View inbound shipments assigned to them
+- Scan package labels using AI-powered OCR
+- Verify that packages match expected product details
+- Automatically assign matched packages to bin locations
+- Request supervisor approval for mismatched packages
+
+Key Technologies:
+- Frontend: React.js (Inbound.jsx component)
+- Backend: Spring Boot (Java)
+- OCR Service: Python FastAPI with PaddleOCR
+- Database: Stores shipments, workers, verification logs
+
+================================================================================
+2. SHIPMENT ASSIGNMENT FLOW
+================================================================================
+
+How shipments are assigned to workers:
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    SHIPMENT ASSIGNMENT FLOW                     │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: Admin/Supervisor Creates Shipment
+    │
+    ├─> POST /api/shipments/create
+    │   └─> Creates Shipment entity in database
+    │
+    └─> Shipment has:
+        - shipmentType: "INBOUND"
+        - status: "PENDING" or "IN_PROGRESS"
+        - shipmentItems: List of packages/products
+
+Step 2: Admin/Supervisor Assigns Workers
+    │
+    ├─> POST /api/shipments/{shipmentId}/assign-workers
+    │   └─> Body: [workerId1, workerId2, ...]
+    │
+    ├─> Backend: ShipmentWorkerService.assignWorkers()
+    │   └─> Creates ShipmentWorker records
+    │       - Links Shipment to User (worker)
+    │       - Stores assignment timestamp
+    │
+    └─> Database Table: shipment_workers
+        - shipment_id (FK to shipments)
+        - worker_id (FK to users)
+        - assigned_at (timestamp)
+
+Step 3: Shipment Available for Workers
+    │
+    └─> Workers can now see the shipment in their dashboard
+
+CODE LOCATIONS:
+- Backend Controller: ShipmentController.java
+  └─> POST /api/shipments/{id}/assign-workers
+- Backend Service: ShipmentWorkerServiceImpl.java
+  └─> assignWorkers(int shipmentId, List<Integer> workerIds)
+- Frontend Service: shipmentService.js
+  └─> assignWorkers(shipmentId, workerIds)
+- Frontend Component: ShipmentDetail.jsx
+  └─> handleAssignWorkers() function
+
+================================================================================
+3. WORKER GETTING INBOUND REQUESTS
+================================================================================
+
+How workers access and view inbound shipments:
+
+┌─────────────────────────────────────────────────────────────────┐
+│              WORKER ACCESSING INBOUND SHIPMENTS                 │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: Worker Logs In
+    │
+    ├─> Authentication via JWT token
+    │   └─> Token contains user email and role (WORKER)
+    │
+    └─> Worker navigates to Inbound page
+
+Step 2: Frontend Fetches All Shipments
+    │
+    ├─> GET /api/shipments
+    │   └─> Returns all shipments (ADMIN/SUPERVISOR/WORKER can access)
+    │
+    ├─> Frontend: Inbound.jsx
+    │   └─> fetchInboundShipments()
+    │       └─> Filters: shipmentType === 'INBOUND' && status !== 'COMPLETED'
+    │
+    └─> Displays list of available inbound shipments
+
+Step 3: Worker Selects a Shipment
+    │
+    ├─> Frontend: handleShipmentSelect(shipment)
+    │   │
+    ├─> GET /api/inbound-verification/shipment-items/{shipmentId}
+    │   │
+    ├─> Backend: InboundVerificationController.getShipmentItemsWithLocations()
+    │   │   └─> Returns ShipmentItemDTO list with:
+    │   │       - Package details (SKU, Product, Quantity)
+    │   │       - Bin location info (Zone, Rack, Bin) if available
+    │   │       - Status (PENDING, RECEIVED, etc.)
+    │   │
+    └─> Frontend displays packages list
+
+Step 4: Worker Selects a Package
+    │
+    └─> Frontend: handlePackageSelect(pkg)
+        └─> Shows package details and upload interface
+
+CODE LOCATIONS:
+- Frontend Component: FRONTEND/src/pages/worker/Inbound.jsx
+  └─> fetchInboundShipments() - Line 30-40
+  └─> handleShipmentSelect() - Line 42-58
+  └─> handlePackageSelect() - Line 60-65
+- Frontend Service: FRONTEND/src/services/inboundVerificationService.js
+  └─> getShipmentItemsWithLocations(shipmentId)
+- Backend Controller: InboundVerificationController.java
+  └─> GET /api/inbound-verification/shipment-items/{shipmentId} - Line 86-122
+- Backend Service: ShipmentItemService
+  └─> getItemsByShipment(shipmentId)
+
+================================================================================
+4. IMAGE VERIFICATION PROCESS
+================================================================================
+
+How the worker verifies a package using image scanning:
+
+┌─────────────────────────────────────────────────────────────────┐
+│              IMAGE VERIFICATION PROCESS FLOW                    │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: Worker Uploads Package Image
+    │
+    ├─> Frontend: Inbound.jsx
+    │   └─> handleImageUpload(e) - Line 67-77
+    │       └─> Reads file using FileReader
+    │       └─> Creates image preview
+    │
+    └─> Image stored in state: imageFile
+
+Step 2: Worker Clicks "Verify with AI"
+    │
+    ├─> Frontend: handleVerify() - Line 79-101
+    │   │
+    ├─> Calls: verifyPackage(selectedPackage.id, imageFile)
+    │   │
+    └─> POST /api/inbound-verification/verify/{shipmentItemId}
+        └─> Content-Type: multipart/form-data
+        └─> Body: image file
+
+Step 3: Backend Receives Request
+    │
+    ├─> Controller: InboundVerificationController.verifyPackage()
+    │   │   - Line 52-83
+    │   │
+    ├─> Extracts worker info from JWT token:
+    │   │   Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    │   │   String userEmail = authentication.getName();
+    │   │   User worker = userRepository.findByEmail(userEmail);
+    │   │
+    └─> Calls: inboundVerificationService.verifyAndProcessInbound()
+
+Step 4: Service Layer Processing
+    │
+    ├─> InboundVerificationServiceImpl.verifyAndProcessInbound()
+    │   │   - Line 49-102
+    │   │
+    ├─> Step 4.1: Get Shipment Item Details
+    │   │   └─> shipmentItemService.getShipmentItemById()
+    │   │   └─> Extracts: SKU, Product, Quantity
+    │   │
+    ├─> Step 4.2: Call OCR Service
+    │   │   └─> ocrService.verifyPackageLabel()
+    │   │       └─> Sends image + expected values to OCR API
+    │   │
+    ├─> Step 4.3: Create Verification Log
+    │   │   └─> verificationLogService.createLog()
+    │   │       └─> Stores: extracted vs expected values, worker, result
+    │   │
+    └─> Step 4.4: Check Result
+        ├─> If MATCH → handleMatchedVerification()
+        └─> If MISMATCH → handleMismatchedVerification()
+
+Step 5: OCR Service Processing (Python FastAPI)
+    │
+    ├─> OCR Service: OCR/main.py
+    │   │
+    ├─> Endpoint: POST /verify-label
+    │   │   - Line 211-285
+    │   │
+    ├─> Step 5.1: Read Image
+    │   │   └─> Converts image to numpy array
+    │   │
+    ├─> Step 5.2: Run OCR
+    │   │   └─> ocr_engine.ocr(img_array)
+    │   │       └─> Uses PaddleOCR to extract text from image
+    │   │
+    ├─> Step 5.3: Parse Extracted Data
+    │   │   └─> parse_logistics_data(texts, scores)
+    │   │       └─> Uses regex to extract:
+    │   │           - SKU
+    │   │           - Product Code
+    │   │           - Weight
+    │   │           - Color
+    │   │           - Dimensions
+    │   │
+    └─> Step 5.4: Compare with Expected Values
+        └─> compare_data(extracted, expected_*)
+            └─> Returns: status ("MATCH" or "MISMATCH") + issues list
+
+Step 6: Backend Receives OCR Result
+    │
+    ├─> OCRServiceImpl.verifyPackageLabel() - Line 35-97
+    │   └─> Makes HTTP POST to OCR service
+    │   └─> Parses JSON response to OCRVerificationResult
+    │
+    └─> Returns OCRVerificationResult object
+
+CODE LOCATIONS:
+- Frontend: FRONTEND/src/pages/worker/Inbound.jsx
+  └─> handleImageUpload() - Line 67-77
+  └─> handleVerify() - Line 79-101
+- Frontend Service: FRONTEND/src/services/inboundVerificationService.js
+  └─> verifyPackage() - Line 3-13
+- Backend Controller: InboundVerificationController.java
+  └─> verifyPackage() - Line 52-83
+- Backend Service: InboundVerificationServiceImpl.java
+  └─> verifyAndProcessInbound() - Line 49-102
+- OCR Service: OCRServiceImpl.java
+  └─> verifyPackageLabel() - Line 35-97
+- Python OCR: OCR/main.py
+  └─> verify_label() - Line 211-285
+  └─> parse_logistics_data() - Line 37-122
+  └─> compare_data() - Line 125-204
+
+================================================================================
+5. PRODUCT MATCH/MISMATCH LOGIC
+================================================================================
+
+Detailed explanation of how the system determines if a package matches:
+
+┌─────────────────────────────────────────────────────────────────┐
+│              MATCH/MISMATCH VERIFICATION LOGIC                  │
+└─────────────────────────────────────────────────────────────────┘
+
+COMPARISON PROCESS (Python OCR Service):
+
+The compare_data() function in OCR/main.py compares extracted values with expected:
+
+1. PRODUCT CODE COMPARISON
+   │
+   ├─> Expected: From database (product.getProductCode())
+   ├─> Extracted: From OCR scan
+   │
+   ├─> Normalization:
+   │   └─> Removes prefixes: "PROD:", "PRODUCT:", etc.
+   │   └─> Converts to UPPERCASE
+   │   └─> Trims whitespace
+   │
+   └─> Result:
+       ├─> If extracted_code == expected_code → MATCH
+       ├─> If extracted_code not found → MISMATCH ("Product Code not found")
+       └─> If extracted_code != expected_code → MISMATCH ("Product Code Mismatch")
+
+2. SKU COMPARISON
+   │
+   ├─> Expected: From database (sku.getSkuCode())
+   ├─> Extracted: From OCR scan
+   │
+   ├─> Normalization:
+   │   └─> Removes prefix: "SKU:"
+   │   └─> Converts to UPPERCASE
+   │   └─> Trims whitespace
+   │
+   └─> Result:
+       ├─> If extracted_sku == expected_sku → MATCH
+       ├─> If extracted_sku not found → MISMATCH ("SKU not found")
+       └─> If extracted_sku != expected_sku → MISMATCH ("SKU Mismatch")
+
+3. WEIGHT COMPARISON
+   │
+   ├─> Expected: From database (sku.getWeight())
+   ├─> Extracted: From OCR scan
+   │
+   ├─> Normalization:
+   │   └─> Removes spaces: "2.5 kg" → "2.5KG"
+   │   └─> Converts to UPPERCASE
+   │
+   └─> Result:
+       ├─> If normalized_extracted == normalized_expected → MATCH
+       ├─> If extracted not found → MISMATCH ("Weight not found")
+       └─> If not equal → MISMATCH ("Weight Mismatch")
+
+4. COLOR COMPARISON
+   │
+   ├─> Expected: From database (sku.getColor())
+   ├─> Extracted: From OCR scan
+   │
+   ├─> Normalization:
+   │   └─> Removes prefix: "COLOR:", "COLOUR:"
+   │   └─> Converts to UPPERCASE
+   │   └─> Trims whitespace
+   │
+   └─> Result:
+       ├─> If extracted_color == expected_color → MATCH
+       ├─> If extracted not found → MISMATCH ("Color not found")
+       └─> If not equal → MISMATCH ("Color Mismatch")
+
+5. DIMENSIONS COMPARISON
+   │
+   ├─> Expected: From database (sku.getDimensions())
+   ├─> Extracted: From OCR scan
+   │
+   ├─> Normalization:
+   │   └─> Removes spaces: "10 x 20 x 30" → "10X20X30"
+   │   └─> Converts to UPPERCASE
+   │
+   └─> Result:
+       ├─> If normalized_extracted == normalized_expected → MATCH
+       ├─> If extracted not found → MISMATCH ("Dimensions not found")
+       └─> If not equal → MISMATCH ("Dimensions Mismatch")
+
+OVERALL RESULT:
+    │
+    ├─> If ALL fields match → Status = "MATCH"
+    └─> If ANY field mismatches → Status = "MISMATCH" + list of issues
+
+MATCH HANDLING (Backend):
+    │
+    ├─> handleMatchedVerification() - Line 131-173
+    │   │
+    ├─> Step 1: Find existing inventory stock for SKU
+    │   │   └─> inventoryStockRepository.findBySkuId()
+    │   │
+    ├─> Step 2: Get bin location from existing stock
+    │   │   └─> If stock exists → use its bin location
+    │   │
+    ├─> Step 3: Update inventory quantity
+    │   │   └─> newQuantity = existingStock.quantity + shipmentItem.quantity
+    │   │   └─> inventoryStockService.updateQuantityById()
+    │   │
+    ├─> Step 4: Update shipment item status
+    │   │   └─> shipmentItem.setStatus("RECEIVED")
+    │   │   └─> shipmentItemService.updateShipmentItem()
+    │   │
+    └─> Step 5: Return success response
+        └─> Includes: bin location, matched details
+
+MISMATCH HANDLING (Backend):
+    │
+    ├─> handleMismatchedVerification() - Line 175-211
+    │   │
+    ├─> Step 1: Create expected data JSON
+    │   │   └─> Contains: productCode, skuCode, weight, color, dimensions
+    │   │
+    ├─> Step 2: Create approval request
+    │   │   └─> approvalService.createApprovalRequest()
+    │   │       └─> Stores: shipment item, worker, OCR result, expected data
+    │   │
+    ├─> Step 3: Return mismatch response
+    │   │   └─> Includes: approval request ID, mismatch details, issues
+    │   │
+    └─> Step 4: Supervisor can later approve/reject
+        └─> See ApprovalService for approval workflow
+
+CODE LOCATIONS:
+- Python OCR: OCR/main.py
+  └─> compare_data() - Line 125-204 (Main comparison logic)
+  └─> clean_input() - Line 134-137 (Normalization helper)
+  └─> normalize_weight() - Line 139-142
+  └─> normalize_dimensions() - Line 144-147
+- Backend: InboundVerificationServiceImpl.java
+  └─> handleMatchedVerification() - Line 131-173
+  └─> handleMismatchedVerification() - Line 175-211
+
+================================================================================
+6. API ENDPOINTS EXPLAINED
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│                      API ENDPOINTS                              │
+└─────────────────────────────────────────────────────────────────┘
+
+1. GET /api/shipments
+   Purpose: Get all shipments
+   Access: ADMIN, SUPERVISOR, WORKER
+   Returns: List of ShipmentDTO
+   Used by: Inbound.jsx to list available shipments
+   Controller: ShipmentController.getAllShipments() - Line 64-70
+
+2. GET /api/inbound-verification/shipment-items/{shipmentId}
+   Purpose: Get all packages/items in a shipment with bin locations
+   Access: WORKER, SUPERVISOR
+   Returns: List of ShipmentItemDTO (includes zone, rack, bin info)
+   Used by: Inbound.jsx when worker selects a shipment
+   Controller: InboundVerificationController.getShipmentItemsWithLocations() - Line 86-122
+   Backend Logic:
+     - Gets shipment items from database
+     - For each item, finds existing inventory stock
+     - Extracts bin location (Zone → Rack → Bin)
+     - Returns DTO with location details
+
+3. POST /api/inbound-verification/verify/{shipmentItemId}
+   Purpose: Verify a package by scanning its label image
+   Access: WORKER only
+   Method: POST
+   Content-Type: multipart/form-data
+   Parameters:
+     - Path: shipmentItemId (Long)
+     - Form: image (MultipartFile)
+   Returns: VerificationResponse
+   Used by: Inbound.jsx when worker clicks "Verify with AI"
+   Controller: InboundVerificationController.verifyPackage() - Line 52-83
+   Flow:
+     1. Extracts worker from JWT token
+     2. Calls InboundVerificationService.verifyAndProcessInbound()
+     3. Returns VerificationResponse with match status
+
+4. POST /api/shipments/{shipmentId}/assign-workers
+   Purpose: Assign workers to a shipment
+   Access: ADMIN, SUPERVISOR
+   Method: POST
+   Body: List<Integer> (worker IDs)
+   Returns: 200 OK
+   Used by: ShipmentDetail.jsx when supervisor assigns workers
+   Controller: ShipmentController.assignWorkers() - Line 83-87
+   Backend: ShipmentWorkerService.assignWorkers()
+
+5. POST /verify-label (OCR Service)
+   Purpose: OCR service endpoint for label verification
+   Access: Internal (called by backend)
+   Method: POST
+   Content-Type: multipart/form-data
+   Parameters:
+     - file: UploadFile (image)
+     - expected_product_code: str (optional)
+     - expected_sku: str (optional)
+     - expected_weight: str (optional)
+     - expected_color: str (optional)
+     - expected_dimensions: str (optional)
+   Returns: JSON with verification result
+   Location: OCR/main.py - Line 211-285
+
+VERIFICATION RESPONSE STRUCTURE:
+{
+  "status": "SUCCESS" | "MISMATCH" | "ERROR",
+  "message": "Verification successful...",
+  "matched": true | false,
+  "autoAssigned": true | false,
+  "approvalRequestId": 123 (if mismatch),
+  "details": {
+    "extractedProductCode": "...",
+    "expectedProductCode": "...",
+    "extractedSku": "...",
+    "expectedSku": "...",
+    "extractedWeight": "...",
+    "expectedWeight": "...",
+    "extractedColor": "...",
+    "expectedColor": "...",
+    "extractedDimensions": "...",
+    "expectedDimensions": "...",
+    "confidence": 0.95,
+    "issues": ["..."],
+    "binLocation": "Zone A / Rack 1 / Bin 01" (if matched)
+  }
+}
+
+================================================================================
+7. COMPONENT INTERACTIONS
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│              FRONTEND COMPONENT INTERACTIONS                    │
+└─────────────────────────────────────────────────────────────────┘
+
+COMPONENT HIERARCHY:
+
+App.jsx
+  └─> AppRoutes.jsx
+      └─> ProtectedRoute (for /worker/inbound)
+          └─> Inbound.jsx (Main component)
+              ├─> Card (for shipment list)
+              ├─> Card (for package list)
+              ├─> Card (for scan interface)
+              └─> VerificationResult.jsx (shows verification result)
+
+DATA FLOW:
+
+1. Inbound.jsx Component State:
+   - shipments: List of available inbound shipments
+   - selectedShipment: Currently selected shipment
+   - packages: List of packages in selected shipment
+   - selectedPackage: Currently selected package
+   - imageFile: Uploaded image file
+   - imagePreview: Base64 preview of image
+   - verificationResult: Result from verification API
+   - loading: Loading state
+   - verifying: Verification in progress state
+   - error: Error message
+
+2. Service Layer (inboundVerificationService.js):
+   - verifyPackage(shipmentItemId, imageFile)
+     └─> POST to /api/inbound-verification/verify/{shipmentItemId}
+   - getShipmentItemsWithLocations(shipmentId)
+     └─> GET /api/inbound-verification/shipment-items/{shipmentId}
+
+3. VerificationResult Component:
+   - Receives: result (VerificationResponse)
+   - Displays: Match status, comparison table, issues, bin location
+   - Actions: onProceed (move to next package)
+
+USER INTERACTION FLOW:
+
+1. Worker opens Inbound page
+   └─> useEffect triggers fetchInboundShipments()
+   └─> Displays list of shipments
+
+2. Worker clicks on a shipment
+   └─> handleShipmentSelect(shipment) called
+   └─> Fetches packages for that shipment
+   └─> Displays package list
+
+3. Worker clicks on a package
+   └─> handlePackageSelect(pkg) called
+   └─> Shows package details and upload interface
+
+4. Worker uploads image
+   └─> handleImageUpload(e) called
+   └─> Creates preview and stores file
+
+5. Worker clicks "Verify with AI"
+   └─> handleVerify() called
+   └─> Calls verifyPackage() API
+   └─> Shows loading state
+   └─> Receives result and displays VerificationResult component
+
+6. If matched:
+   └─> Package status updated to "RECEIVED"
+   └─> Bin location displayed
+   └─> Worker can proceed to next package
+
+7. If mismatched:
+   └─> Approval request created automatically
+   └─> Mismatch details displayed
+   └─> Worker can proceed (supervisor will handle approval)
+
+CODE LOCATIONS:
+- Main Component: FRONTEND/src/pages/worker/Inbound.jsx
+- Result Component: FRONTEND/src/components/inbound/VerificationResult.jsx
+- Service: FRONTEND/src/services/inboundVerificationService.js
+- API Config: FRONTEND/src/services/api.js
+
+================================================================================
+8. COMPLETE FLOW DIAGRAM
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│           COMPLETE INBOUND VERIFICATION FLOW                    │
+└─────────────────────────────────────────────────────────────────┘
+
+[ADMIN/SUPERVISOR]
+    │
+    ├─> Creates Shipment (POST /api/shipments/create)
+    │   └─> Shipment created with type="INBOUND"
+    │
+    └─> Assigns Workers (POST /api/shipments/{id}/assign-workers)
+        └─> Creates ShipmentWorker records
+            └─> Links workers to shipment
+
+[WORKER]
+    │
+    ├─> Logs in → Gets JWT token
+    │
+    ├─> Opens Inbound Page
+    │   └─> GET /api/shipments
+    │       └─> Filters: INBOUND shipments
+    │       └─> Displays shipment list
+    │
+    ├─> Selects Shipment
+    │   └─> GET /api/inbound-verification/shipment-items/{shipmentId}
+    │       └─> Gets packages with bin locations
+    │       └─> Displays package list
+    │
+    ├─> Selects Package
+    │   └─> Shows package details
+    │
+    ├─> Uploads Package Image
+    │   └─> Image stored in state
+    │
+    └─> Clicks "Verify with AI"
+        │
+        └─> POST /api/inbound-verification/verify/{shipmentItemId}
+            │
+            [BACKEND - InboundVerificationController]
+            │
+            ├─> Extracts worker from JWT token
+            │
+            └─> Calls InboundVerificationService.verifyAndProcessInbound()
+                │
+                [BACKEND - InboundVerificationServiceImpl]
+                │
+                ├─> Gets ShipmentItem from database
+                │   └─> Extracts: SKU, Product, Quantity
+                │
+                ├─> Calls OCRService.verifyPackageLabel()
+                │   │
+                │   [BACKEND - OCRServiceImpl]
+                │   │
+                │   └─> POST http://localhost:8000/verify-label
+                │       │
+                │       [PYTHON OCR SERVICE]
+                │       │
+                │       ├─> Reads image file
+                │       ├─> Runs PaddleOCR on image
+                │       │   └─> Extracts text from image
+                │       ├─> Parses extracted text
+                │       │   └─> Uses regex to find:
+                │       │       - SKU
+                │       │       - Product Code
+                │       │       - Weight
+                │       │       - Color
+                │       │       - Dimensions
+                │       └─> Compares with expected values
+                │           └─> Returns: "MATCH" or "MISMATCH" + issues
+                │
+                ├─> Creates VerificationLog
+                │   └─> Stores: extracted vs expected, worker, result
+                │
+                └─> Checks Result:
+                    │
+                    ├─> IF MATCH:
+                    │   │
+                    │   └─> handleMatchedVerification()
+                    │       ├─> Finds existing inventory stock for SKU
+                    │       ├─> Gets bin location from stock
+                    │       ├─> Updates inventory quantity
+                    │       │   └─> newQuantity = existing + shipment quantity
+                    │       ├─> Updates shipment item status to "RECEIVED"
+                    │       └─> Returns SUCCESS response with bin location
+                    │
+                    └─> IF MISMATCH:
+                        │
+                        └─> handleMismatchedVerification()
+                            ├─> Creates approval request
+                            │   └─> Stores: item, worker, OCR result, expected data
+                            └─> Returns MISMATCH response with approval ID
+
+[FRONTEND - Inbound.jsx]
+    │
+    ├─> Receives VerificationResponse
+    │
+    ├─> Displays VerificationResult component
+    │   └─> Shows: match status, comparison table, issues
+    │
+    └─> IF matched:
+        └─> Reloads packages list (to show updated status)
+        └─> Worker can proceed to next package
+
+================================================================================
+9. CODE WALKTHROUGH
+================================================================================
+
+KEY FILES AND THEIR PURPOSE:
+
+FRONTEND:
+1. FRONTEND/src/pages/worker/Inbound.jsx
+   - Main component for inbound verification
+   - Manages state: shipments, packages, selected items, images
+   - Handles user interactions: select shipment, select package, upload, verify
+   - Key functions:
+     * fetchInboundShipments() - Loads available shipments
+     * handleShipmentSelect() - Loads packages for selected shipment
+     * handlePackageSelect() - Selects a package to verify
+     * handleImageUpload() - Handles image file upload
+     * handleVerify() - Triggers verification API call
+
+2. FRONTEND/src/components/inbound/VerificationResult.jsx
+   - Displays verification result to user
+   - Shows comparison table (expected vs extracted)
+   - Displays match status, issues, bin location
+   - Key props:
+     * result - VerificationResponse from API
+     * onProceed - Callback to move to next package
+
+3. FRONTEND/src/services/inboundVerificationService.js
+   - API service functions for inbound verification
+   - verifyPackage() - Sends image to verification endpoint
+   - getShipmentItemsWithLocations() - Gets packages with locations
+
+BACKEND:
+1. Full-Backend/backend/src/main/java/com/visera/backend/Controller/InboundVerificationController.java
+   - REST controller for inbound verification endpoints
+   - verifyPackage() - Handles verification request
+   - getShipmentItemsWithLocations() - Returns packages with bin info
+
+2. Full-Backend/backend/src/main/java/com/visera/backend/Service/InboundVerificationServiceImpl.java
+   - Main business logic for verification
+   - verifyAndProcessInbound() - Orchestrates verification process
+   - handleMatchedVerification() - Processes matched packages
+   - handleMismatchedVerification() - Creates approval requests
+
+3. Full-Backend/backend/src/main/java/com/visera/backend/Service/OCRServiceImpl.java
+   - Service to communicate with Python OCR service
+   - verifyPackageLabel() - Sends image and expected values to OCR API
+   - Parses OCR response to OCRVerificationResult
+
+4. Full-Backend/backend/src/main/java/com/visera/backend/Service/ShipmentWorkerServiceImpl.java
+   - Manages worker assignments to shipments
+   - assignWorkers() - Links workers to shipments
+   - getAssignedWorkers() - Gets workers assigned to a shipment
+
+OCR SERVICE:
+1. OCR/main.py
+   - Python FastAPI service for OCR processing
+   - verify_label() - Main endpoint for label verification
+   - parse_logistics_data() - Extracts structured data from OCR text
+   - compare_data() - Compares extracted vs expected values
+
+DATABASE ENTITIES:
+1. Shipment - Represents an inbound/outbound shipment
+2. ShipmentItem - Individual package/item in a shipment
+3. ShipmentWorker - Links workers to shipments (many-to-many)
+4. VerificationLog - Stores verification history
+5. InventoryStock - Tracks inventory in bins
+6. Bin, Rack, Zone - Warehouse location hierarchy
+7. Sku, Product - Product information
+8. User - Worker information
+
+================================================================================
+10. SUMMARY
+================================================================================
+
+The inbound verification workflow follows these steps:
+
+1. ADMIN/SUPERVISOR assigns workers to shipments
+2. WORKER views available inbound shipments
+3. WORKER selects a shipment and sees its packages
+4. WORKER selects a package and uploads its label image
+5. SYSTEM sends image to OCR service for text extraction
+6. SYSTEM compares extracted values with expected values from database
+7. IF MATCH: Package automatically assigned to bin, inventory updated
+8. IF MISMATCH: Approval request created for supervisor review
+9. WORKER sees result and can proceed to next package
+
+Key Technologies:
+- Frontend: React.js with hooks (useState, useEffect)
+- Backend: Spring Boot (Java) with REST APIs
+- OCR: Python FastAPI with PaddleOCR
+- Database: JPA/Hibernate for data persistence
+- Authentication: JWT tokens for security
+
+This system ensures accurate package verification using AI-powered OCR
+while maintaining a clear audit trail through verification logs.
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
+
+
+
+

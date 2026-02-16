@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.visera.agentic.AgenticAIApplicationTests
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.419 s -- in com.visera.agentic.AgenticAIApplicationTests

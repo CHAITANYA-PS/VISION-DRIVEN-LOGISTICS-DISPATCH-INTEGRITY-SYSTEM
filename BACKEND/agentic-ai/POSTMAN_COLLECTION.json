@@ -1,0 +1,223 @@
+{
+	"info": {
+		"_postman_id": "agentic-ai-products",
+		"name": "Agentic AI - Unified Service",
+		"description": "Postman collection for testing Agentic AI queries. Supports all entities (products, shipments, inventory, users, etc.). Both /api/ai/chat and /api/ai/products/chat endpoints work (backward compatibility).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Count Active Products",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"question\": \"how many active products are there?\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		},
+		{
+			"name": "List All Products",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"question\": \"show me all products\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		},
+		{
+			"name": "Count by Category",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"question\": \"how many products are in the Electronics category?\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		},
+		{
+			"name": "List Inactive Products",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"question\": \"list all inactive products\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		},
+		{
+			"name": "Search by Product Code",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"question\": \"find product with code PROD001\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		},
+		{
+			"name": "Count by Multiple Criteria",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"question\": \"how many active products are in Electronics category?\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		},
+		{
+			"name": "Natural Language Variation",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"question\": \"what's the total number of products that are currently active?\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		},
+		{
+			"name": "Error - Missing Question",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"wrongField\": \"test\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		},
+		{
+			"name": "Error - Empty Question",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"question\": \"\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8082/api/ai/products/chat",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8082",
+					"path": ["api", "ai", "products", "chat"]
+				}
+			}
+		}
+	]
+}
+
+
+
+
+
+

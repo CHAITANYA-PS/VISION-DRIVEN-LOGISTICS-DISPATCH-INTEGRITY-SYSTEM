@@ -1,0 +1,730 @@
+================================================================================
+  VISERA WAREHOUSE MANAGEMENT SYSTEM - IMPLEMENTATION GUIDE
+================================================================================
+
+PROJECT OVERVIEW
+----------------
+A complete full-stack warehouse management system with role-based access control,
+AI-powered verification tracking, real-time inventory management, and task assignment.
+
+TECHNOLOGY STACK
+----------------
+Frontend:
+  - React 19.2.0
+  - React Router DOM (routing)
+  - Axios (API calls)
+  - Recharts (data visualization)
+  - Tailwind CSS (styling)
+  - Lucide React (icons)
+  - Date-fns (date formatting)
+
+Backend:
+  - Spring Boot 4.0.0
+  - MySQL Database
+  - JWT Authentication
+  - Spring Security
+  - JPA/Hibernate
+  - Port: 8081
+
+================================================================================
+COLOR SCHEME (CONSISTENT ACROSS APPLICATION)
+================================================================================
+
+Primary Colors:
+  - Primary Blue: #2563EB
+  - Success Green: #10B981
+  - Warning Orange: #F59E0B
+  - Danger Red: #EF4444
+  - Purple: #8B5CF6
+  - Gray Shades: #6B7280, #9CA3AF, #E5E7EB
+
+Status Colors:
+  - Active/Completed: Green
+  - Pending/In Progress: Yellow/Orange
+  - Error/Mismatch: Red
+  - Inactive/Cancelled: Gray
+
+This color scheme is applied consistently through:
+  - tailwind.config.js (color definitions)
+  - Badge component variants
+  - Button component variants
+  - Status indicators
+  - Charts and graphs
+
+================================================================================
+FOLDER STRUCTURE
+================================================================================
+
+FRONTEND/
+├── src/
+│   ├── config/
+│   │   └── env.js                    # Environment configuration
+│   ├── services/
+│   │   ├── api.js                    # Axios instance with interceptors
+│   │   ├── authService.js            # Authentication service
+│   │   ├── productService.js         # Product API calls
+│   │   ├── skuService.js             # SKU API calls
+│   │   └── shipmentService.js        # Shipment API calls
+│   ├── components/
+│   │   ├── common/                   # Reusable UI components
+│   │   │   ├── Button.jsx
+│   │   │   ├── Card.jsx
+│   │   │   ├── Input.jsx
+│   │   │   ├── Badge.jsx
+│   │   │   ├── Table.jsx
+│   │   │   ├── Loading.jsx
+│   │   │   ├── Modal.jsx
+│   │   │   ├── Select.jsx
+│   │   │   ├── Progress.jsx
+│   │   │   ├── Alert.jsx
+│   │   │   └── MetricCard.jsx
+│   │   ├── layout/
+│   │   │   ├── Layout.jsx           # Main layout wrapper
+│   │   │   └── Sidebar.jsx          # Navigation sidebar
+│   │   └── features/                # Feature-specific components
+│   ├── pages/
+│   │   ├── auth/
+│   │   │   └── Login.jsx            # Login page
+│   │   ├── admin/
+│   │   │   └── AdminDashboard.jsx   # Admin dashboard with charts
+│   │   ├── supervisor/
+│   │   │   └── SupervisorDashboard.jsx  # Supervisor dashboard
+│   │   ├── worker/
+│   │   │   └── WorkerDashboard.jsx      # Worker dashboard
+│   │   ├── products/
+│   │   │   └── ProductList.jsx      # Product management
+│   │   ├── skus/
+│   │   │   └── SkuList.jsx          # SKU management
+│   │   └── shipments/
+│   │       └── ShipmentList.jsx     # Shipment management
+│   ├── routes/
+│   │   ├── AppRoutes.jsx            # Main routing configuration
+│   │   └── ProtectedRoute.jsx       # Role-based route protection
+│   ├── utils/
+│   │   ├── constants.js             # Application constants
+│   │   ├── formatters.js            # Data formatting functions
+│   │   ├── helpers.js               # Utility helper functions
+│   │   └── validators.js            # Form validation
+│   ├── App.jsx                      # Main App component
+│   └── main.jsx                     # Entry point
+├── tailwind.config.js               # Tailwind configuration
+├── postcss.config.js                # PostCSS configuration
+└── package.json                     # Dependencies
+
+================================================================================
+REACT CONCEPTS USED FOR EACH PAGE/COMPONENT
+================================================================================
+
+1. LOGIN PAGE (pages/auth/Login.jsx)
+   React Concepts:
+   - useState: Managing form data, password visibility, loading state
+   - Form handling: Controlled components with onChange handlers
+   - Async/await: API calls with try-catch error handling
+   - useNavigate: Programmatic navigation after login
+   - Conditional rendering: Show/hide password, loading states
+   - Event handlers: onSubmit, onChange, onClick
+   
+   Features:
+   - JWT token storage in localStorage
+   - Role-based redirection (Admin/Supervisor/Worker)
+   - Remember me functionality
+   - Error message display
+   - Responsive design with Tailwind
+
+2. ADMIN DASHBOARD (pages/admin/AdminDashboard.jsx)
+   React Concepts:
+   - useState: Managing metrics state
+   - useEffect: Fetching dashboard data on mount
+   - Data visualization: Recharts integration
+   - Component composition: MetricCard, Card components
+   - Conditional rendering: Loading states
+   
+   Features:
+   - 4 metric cards showing KPIs
+   - Bar chart for stock movement (Inbound/Outbound)
+   - Line chart for inventory trends
+   - Quick action buttons
+   - Real-time data updates
+
+3. SUPERVISOR DASHBOARD (pages/supervisor/SupervisorDashboard.jsx)
+   React Concepts:
+   - useState: Managing metrics and mismatch alerts
+   - Array mapping: Rendering mismatch alerts and worker cards
+   - Component reusability: MetricCard, Badge components
+   
+   Features:
+   - AI mismatch alerts with NEW badges
+   - Worker task overview with status indicators
+   - Real-time operational metrics
+   - Action buttons for resolving issues
+
+4. WORKER DASHBOARD (pages/worker/WorkerDashboard.jsx)
+   React Concepts:
+   - useState: Managing tasks and metrics
+   - Array iteration: Rendering task cards
+   - Conditional styling: Priority badges (HIGH/MEDIUM/LOW)
+   
+   Features:
+   - Task-focused interface
+   - Quick scan button for package verification
+   - AI mismatch alerts
+   - Priority-based task display
+   - Deadline indicators
+
+5. PRODUCT LIST (pages/products/ProductList.jsx)
+   React Concepts:
+   - useState: Search term, products array, loading state
+   - useEffect: Fetching products from API
+   - Array filter: Client-side search functionality
+   - API integration: Axios GET requests
+   - Conditional rendering: Empty state, loading state
+   
+   Features:
+   - Search functionality
+   - Data table with sortable columns
+   - Status badges
+   - CRUD action buttons
+
+6. SKU LIST (pages/skus/SkuList.jsx)
+   React Concepts:
+   - useState + useEffect: Data fetching pattern
+   - Array filter: Search implementation
+   - Component composition: Table components
+   
+   Features:
+   - Barcode display
+   - SKU code search
+   - Product relationship display
+   - Status indicators
+
+7. SHIPMENT LIST (pages/shipments/ShipmentList.jsx)
+   React Concepts:
+   - useState + useEffect: Standard data fetching
+   - Utility functions: formatDate, getStatusColor
+   - Conditional rendering: Empty states
+   
+   Features:
+   - Type badges (INBOUND/OUTBOUND)
+   - Status tracking
+   - User assignment display
+   - Date formatting
+
+8. SIDEBAR NAVIGATION (components/layout/Sidebar.jsx)
+   React Concepts:
+   - useLocation: Detecting active route
+   - useNavigate: Logout functionality
+   - Dynamic rendering: Role-based menu items
+   - Conditional styling: Active route highlighting
+   
+   Features:
+   - Role-specific menu items
+   - Active route highlighting
+   - Logout functionality
+   - Notification and settings links
+
+9. PROTECTED ROUTE (routes/ProtectedRoute.jsx)
+   React Concepts:
+   - Higher-order component pattern
+   - Conditional rendering: Navigate component
+   - Authentication check: isAuthenticated()
+   - Authorization check: Role validation
+   
+   Features:
+   - JWT token validation
+   - Role-based access control
+   - Automatic redirection for unauthorized access
+
+10. COMMON COMPONENTS
+    Button.jsx:
+    - Props destructuring
+    - Variant system (primary, secondary, danger, etc.)
+    - Size variants (sm, md, lg)
+    - Disabled states
+    
+    Card.jsx:
+    - Composition pattern (Card, CardHeader, CardTitle, CardContent)
+    - Flexible children prop
+    - Consistent styling
+    
+    Table.jsx:
+    - Component composition
+    - Semantic HTML structure
+    - Responsive design
+    
+    MetricCard.jsx:
+    - Icon integration
+    - Color variants
+    - Trend indicators
+    - Reusable dashboard metrics
+
+================================================================================
+APPLICATION FLOW & INTERCONNECTIONS
+================================================================================
+
+1. AUTHENTICATION FLOW
+   User Input (Login.jsx)
+        ↓
+   authService.login(email, password)
+        ↓
+   api.post('/api/auth/login')  [Axios with interceptors]
+        ↓
+   Backend: AuthController → AuthService → JWT generation
+        ↓
+   Response: { token, role, userId }
+        ↓
+   localStorage.setItem(token, role, userId)
+        ↓
+   Role-based redirect:
+     - ADMIN → /admin/dashboard
+     - SUPERVISOR → /supervisor/dashboard
+     - WORKER → /worker/dashboard
+
+2. PROTECTED ROUTE FLOW
+   User navigates to protected route
+        ↓
+   ProtectedRoute component checks:
+     1. isAuthenticated() → check if token exists
+     2. getRole() → check user role
+     3. Compare with allowedRoles
+        ↓
+   If authorized:
+     - Render Layout + requested page
+   If not authorized:
+     - Redirect to appropriate dashboard or login
+
+3. API REQUEST FLOW
+   Component calls service function
+        ↓
+   Example: productService.getAllProducts()
+        ↓
+   api.get('/api/products/getallproducts')
+        ↓
+   Request Interceptor:
+     - Adds Authorization: Bearer <token>
+     - Adds Content-Type: application/json
+        ↓
+   Backend receives request
+        ↓
+   JwtFilter validates token
+        ↓
+   ProductController.getAllProducts()
+        ↓
+   ProductService → ProductRepository → Database
+        ↓
+   Response returned
+        ↓
+   Response Interceptor:
+     - If 401: Clear tokens, redirect to login
+     - If 403: Show permission error
+     - If 404/400: Show error message
+        ↓
+   Component receives data and updates state
+        ↓
+   UI re-renders with new data
+
+4. SIDEBAR NAVIGATION FLOW
+   User clicks menu item
+        ↓
+   React Router navigates to path
+        ↓
+   useLocation() detects active route
+        ↓
+   Sidebar highlights active menu item
+        ↓
+   ProtectedRoute validates access
+        ↓
+   Layout renders with Sidebar + Page content
+
+5. DATA FETCHING PATTERN (Used in all list pages)
+   Component mounts
+        ↓
+   useEffect hook triggers
+        ↓
+   setLoading(true)
+        ↓
+   API call via service function
+        ↓
+   Response received
+        ↓
+   setState(response.data)
+        ↓
+   setLoading(false)
+        ↓
+   Component re-renders with data
+        ↓
+   If search term changes:
+     - Client-side filtering with Array.filter()
+     - UI updates immediately
+
+6. STATE MANAGEMENT PATTERN
+   Local State (useState):
+     - Form inputs
+     - Loading states
+     - Error messages
+     - Search terms
+     - Modal visibility
+   
+   Global State (localStorage):
+     - JWT token
+     - User role
+     - User ID
+   
+   Server State:
+     - API responses cached in component state
+     - Refetched on mount or user action
+
+================================================================================
+HOW TO RUN THE APPLICATION
+================================================================================
+
+PREREQUISITES:
+--------------
+1. Node.js (v18+) and pnpm installed
+2. Java 25 and Maven installed
+3. MySQL database running on localhost:3306
+
+STEP 1: DATABASE SETUP
+-----------------------
+1. Ensure MySQL is running
+2. The backend will auto-create 'visera_db' database
+3. No manual SQL scripts needed (Hibernate DDL auto-update)
+
+STEP 2: BACKEND SETUP
+----------------------
+1. Navigate to backend directory:
+   cd Full-Backend/backend
+
+2. Update application.properties if needed:
+   - Database username/password (default: root/root1234)
+   - Server port (default: 8081)
+
+3. Run the backend:
+   ./mvnw spring-boot:run
+   
+   OR on Windows:
+   mvnw.cmd spring-boot:run
+
+4. Verify backend is running:
+   - Open browser: http://localhost:8081
+   - Backend should be accessible
+
+STEP 3: FRONTEND SETUP
+-----------------------
+1. Navigate to frontend directory:
+   cd FRONTEND
+
+2. Install dependencies (already done):
+   pnpm install
+
+3. Verify .env.local exists with:
+   VITE_API_BASE_URL=http://localhost:8081
+
+4. Run the frontend:
+   pnpm dev
+
+5. Open browser:
+   http://localhost:5173 (or the port shown in terminal)
+
+STEP 4: CREATE TEST USERS
+--------------------------
+Use Postman or curl to create users:
+
+Admin User:
+POST http://localhost:8081/api/auth/register
+{
+  "name": "Admin User",
+  "email": "admin@visera.com",
+  "password": "admin123",
+  "role": "ADMIN"
+}
+
+Supervisor User:
+POST http://localhost:8081/api/auth/register
+{
+  "name": "Supervisor User",
+  "email": "supervisor@visera.com",
+  "password": "super123",
+  "role": "SUPERVISOR"
+}
+
+Worker User:
+POST http://localhost:8081/api/auth/register
+{
+  "name": "Worker User",
+  "email": "worker@visera.com",
+  "password": "worker123",
+  "role": "WORKER"
+}
+
+STEP 5: LOGIN & TEST
+---------------------
+1. Open http://localhost:5173
+2. You'll see the Login page
+3. Login with one of the created users
+4. You'll be redirected to role-specific dashboard:
+   - Admin → Admin Dashboard (charts, metrics)
+   - Supervisor → Supervisor Dashboard (operations)
+   - Worker → Worker Dashboard (tasks)
+
+5. Test navigation:
+   - Click sidebar menu items
+   - Test Products, SKUs, Shipments pages
+   - Verify role-based access control
+
+STEP 6: CREATE SAMPLE DATA
+---------------------------
+Create Products:
+POST http://localhost:8081/api/products/create
+Headers: Authorization: Bearer <your-token>
+{
+  "name": "Dell Laptop i7",
+  "description": "High-performance laptop",
+  "category": "Electronics",
+  "imageUrl": "https://example.com/laptop.jpg"
+}
+
+Create SKUs:
+POST http://localhost:8081/api/skus/create
+Headers: Authorization: Bearer <your-token>
+{
+  "product": { "id": 1 },
+  "skuCode": "DELL-LAP-001",
+  "weight": 2.5,
+  "dimensions": "35x25x2",
+  "color": "Silver",
+  "imageUrl": "https://example.com/laptop.jpg"
+}
+
+Create Shipments:
+POST http://localhost:8081/api/shipments/create
+Headers: Authorization: Bearer <your-token>
+{
+  "shipmentType": "INBOUND",
+  "status": "CREATED",
+  "createdBy": { "id": 1 },
+  "assignedTo": { "id": 2 }
+}
+
+================================================================================
+FEATURES IMPLEMENTED
+================================================================================
+
+✓ Authentication & Authorization
+  - JWT token-based authentication
+  - Role-based access control (ADMIN, SUPERVISOR, WORKER)
+  - Automatic token refresh
+  - Secure route protection
+
+✓ Role-Based Dashboards
+  - Admin: Analytics, charts, KPIs
+  - Supervisor: Operations, approvals, worker monitoring
+  - Worker: Tasks, scanning, putaway/picking
+
+✓ Product Management
+  - List products with search
+  - View product details
+  - Create/edit products
+  - Category-based organization
+
+✓ SKU Management
+  - List SKUs with barcode display
+  - Search by SKU code
+  - View SKU details
+  - Product relationship tracking
+
+✓ Shipment Management
+  - Inbound/Outbound shipments
+  - Status tracking
+  - User assignment
+  - Timeline visualization
+
+✓ Navigation & Layout
+  - Role-specific sidebar menus
+  - Active route highlighting
+  - Responsive design
+  - Consistent UI/UX
+
+✓ Data Visualization
+  - Bar charts for stock movement
+  - Line charts for trends
+  - Metric cards with icons
+  - Progress indicators
+
+✓ Error Handling
+  - Global error interceptor
+  - User-friendly error messages
+  - Automatic token expiration handling
+  - Loading states
+
+✓ Consistent Design System
+  - Tailwind CSS utilities
+  - Reusable components
+  - Color-coded status indicators
+  - Typography hierarchy
+
+================================================================================
+API ENDPOINTS INTEGRATION
+================================================================================
+
+Authentication:
+  POST /api/auth/login          - User login
+  POST /api/auth/register       - User registration
+
+Products:
+  GET  /api/products/getallproducts  - Get all products
+  POST /api/products/create     - Create product
+  GET  /api/products/{id}       - Get product by ID
+
+SKUs:
+  GET  /api/skus/getallskudto   - Get all SKUs
+  POST /api/skus/create         - Create SKU
+  GET  /api/skus/getbyid/{id}   - Get SKU by ID
+
+Shipments:
+  GET  /api/shipments           - Get all shipments
+  POST /api/shipments/create    - Create shipment
+  GET  /api/shipments/{id}      - Get shipment by ID
+  PUT  /api/shipments/{id}      - Update shipment
+
+Users:
+  GET  /api/users/getallusersDTOs - Get all users
+  GET  /api/users/{id}          - Get user by ID
+  POST /api/users/create        - Create user
+
+Zones/Racks/Bins:
+  GET  /api/zones/all           - Get all zones
+  GET  /api/racks/zone/{zoneId} - Get racks by zone
+  GET  /api/bins/rack/{rackId}  - Get bins by rack
+
+All protected endpoints require:
+  Header: Authorization: Bearer <JWT_TOKEN>
+
+================================================================================
+KEY FILES EXPLAINED
+================================================================================
+
+1. api.js - Axios instance with:
+   - Base URL configuration
+   - Request interceptor (adds JWT token)
+   - Response interceptor (handles errors)
+   - Automatic 401 redirect to login
+
+2. authService.js - Authentication utilities:
+   - login(), register(), logout()
+   - Token management (get, set, remove)
+   - Role checking (isAdmin, isSupervisor, isWorker)
+   - Authentication check (isAuthenticated)
+
+3. ProtectedRoute.jsx - Route protection:
+   - Checks if user is authenticated
+   - Validates user role against allowed roles
+   - Redirects unauthorized users
+
+4. tailwind.config.js - Design system:
+   - Custom color palette
+   - Spacing system
+   - Typography settings
+   - Consistent with UI documentation
+
+5. AppRoutes.jsx - Routing configuration:
+   - All application routes
+   - Protected routes with role checks
+   - Default redirects based on role
+   - Layout wrapper integration
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Issue: "Network Error" or "Connection Refused"
+Solution: Ensure backend is running on port 8081
+
+Issue: "401 Unauthorized" error
+Solution: User needs to login again (token expired or invalid)
+
+Issue: "403 Forbidden" error
+Solution: User doesn't have permission for this action
+
+Issue: Login redirects to login again
+Solution: Check if backend is running and returning valid JWT token
+
+Issue: Sidebar menu items not showing
+Solution: Verify user role is set correctly in localStorage
+
+Issue: Data not loading
+Solution: 
+  1. Check browser console for errors
+  2. Verify API endpoint is correct
+  3. Ensure backend is running
+  4. Check JWT token is valid
+
+Issue: Styles not applying
+Solution: Ensure Tailwind CSS is properly configured and imported
+
+================================================================================
+NEXT STEPS FOR ENHANCEMENT
+================================================================================
+
+1. Additional Pages:
+   - AI Verification Logs page
+   - Reports & Analytics page
+   - Approvals page for supervisors
+   - Inbound/Putaway/Picking pages for workers
+   - Issue reporting page
+
+2. Features:
+   - Image upload for package verification
+   - Real-time notifications (WebSocket)
+   - Advanced search and filters
+   - Export to PDF/Excel
+   - Dark mode toggle
+
+3. Improvements:
+   - Form validation with react-hook-form + zod
+   - Data caching with React Query
+   - Optimistic UI updates
+   - Skeleton loading states
+   - Toast notifications
+
+================================================================================
+SUMMARY
+================================================================================
+
+✅ Full-stack application with React + Spring Boot
+✅ Role-based authentication and authorization
+✅ 3 distinct dashboards (Admin, Supervisor, Worker)
+✅ Product, SKU, and Shipment management
+✅ Data visualization with charts
+✅ Consistent color scheme throughout
+✅ Responsive design with Tailwind CSS
+✅ Protected routes with JWT authentication
+✅ RESTful API integration
+✅ Reusable component library
+
+The application follows React best practices:
+- Component composition
+- useState + useEffect patterns
+- Controlled components
+- Error boundaries
+- Code splitting with React Router
+- Utility-first CSS with Tailwind
+- Service layer architecture
+- Environment configuration
+- TypeScript-ready structure
+
+All major React concepts demonstrated:
+- Hooks (useState, useEffect, useNavigate, useLocation)
+- Component lifecycle
+- Props and state management
+- Conditional rendering
+- Event handling
+- Form handling
+- API integration
+- Route protection
+- Context (through layout)
+- Component composition
+
+================================================================================
+END OF GUIDE
+================================================================================
+
